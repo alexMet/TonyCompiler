@@ -1,0 +1,17 @@
+def main ():
+
+	def int alex (int i, k; char p):
+		return 5
+	end
+
+	def char foo ():
+		return 'caaa'
+	end
+
+	
+	int i
+	char l
+
+	i := alex(5, 6, foo())
+
+end
