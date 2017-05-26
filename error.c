@@ -9,7 +9,7 @@
  *	Error handler functions implementations. 
  */
 
-void internal(const char * fmt, ...) {
+void internal(const char *fmt, ...) {
    va_list ap;
 
    va_start(ap, fmt);
@@ -21,7 +21,7 @@ void internal(const char * fmt, ...) {
    exit(1);
 }
 
-void fatal(const char * fmt, ...) {
+void fatal(const char *fmt, ...) {
    va_list ap;
 
    va_start(ap, fmt);
@@ -33,7 +33,7 @@ void fatal(const char * fmt, ...) {
    exit(1);
 }
 
-void error(const char * fmt, ...) {
+void error(const char *fmt, ...) {
    va_list ap;
 
    va_start(ap, fmt);
@@ -44,7 +44,7 @@ void error(const char * fmt, ...) {
    va_end(ap);
 }
 
-void warning(const char * fmt, ...) {
+void warning(const char *fmt, ...) {
    va_list ap;
 
    va_start(ap, fmt);

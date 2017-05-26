@@ -26,16 +26,14 @@
 #include "general.h"
 #include "symbol.h"
 
-/* ---------------------------------------------------------------------
-   ------------- Êáèïëéêİò ìåôáâëçôİò ôïõ ğßíáêá óõìâüëùí --------------
-   --------------------------------------------------------------------- */
+/* --- Symbol table's global variables. --- */
+ 
+Scope        *currentScope;           /* Current Scope          */
+unsigned int  quadNext;               /* Next quad number       */
+unsigned int  tempNumber;             /* Next temporary number  */
 
-Scope        *currentScope;           /* Ôñİ÷ïõóá åìâİëåéá              */
-unsigned int  quadNext;               /* Áñéèìüò åğüìåíçò ôåôñÜäáò      */
-unsigned int  tempNumber;             /* Áñßèìçóç ôùí temporaries       */
-
-static unsigned int  hashTableSize;   /* Ìİãåèïò ğßíáêá êáôáêåñìáôéóìïı */
-static SymbolEntry **hashTable;       /* Ğßíáêáò êáôáêåñìáôéóìïı        */
+static unsigned int  hashTableSize;   /* Hash table size        */
+static SymbolEntry **hashTable;       /* Hash table             */
 
 static struct Type_tag typeConst [] = {
     { TYPE_VOID,    NULL, 0, 0 },
@@ -49,10 +47,7 @@ const Type typeInteger = &(typeConst[1]);
 const Type typeBoolean = &(typeConst[2]);
 const Type typeChar    = &(typeConst[3]);
 
-
-/* ---------------------------------------------------------------------
-   ------- Õëïğïßçóç âïçèçôéêşí óõíáñôŞóåùí ôïõ ğßíáêá óõìâüëùí --------
-   --------------------------------------------------------------------- */
+/* --- Implemantation of symbol table helper functions. --- */
 
 typedef unsigned long int HashType;
 
@@ -120,10 +115,7 @@ void strAppendString(char *buffer, RepString str) {
         strAppendChar(buffer, *s);
 }
 
-
-/* ---------------------------------------------------------------------
-   ------ Õëïğïßçóç ôùí óõíáñôŞóåùí ÷åéñéóìïı ôïõ ğßíáêá óõìâüëùí ------
-   --------------------------------------------------------------------- */
+/* --- Implemantation of symbol table utilities functions. --- */
 
 /* Initialize the symbol table. Size should be a prime number. */
 void initSymbolTable(unsigned int size) {
@@ -245,7 +237,9 @@ SymbolEntry *newVariable(const char *name, Type type) {
     return e;
 }
 
-/* TODO this */
+/*
+ *	TODO Create a new constant
+ */
 SymbolEntry *newConstant(const char *name, Type type, ...) {
     SymbolEntry *e;
     va_list ap;
@@ -469,6 +463,7 @@ void endFunctionHeader(SymbolEntry *f, Type type) {
     f->u.eFunction.pardef = PARDEF_COMPLETE;
 }
 
+
 SymbolEntry *newTemporary(Type type) {
     char buffer[10];
     SymbolEntry *e;
@@ -590,6 +585,7 @@ Type typePointer(Type refType) {
     return n;
 }
 
+/*  */
 void destroyType(Type type) {
 
     switch (type->kind) {

@@ -21,17 +21,12 @@ void delete(void *p) {
       free(p);
 }
 
-/* ---------------------------------------------------------------------
-   ------- Αρχείο εισόδου του μεταγλωττιστή και αριθμός γραμμής --------
-   --------------------------------------------------------------------- */
-
-
 /*
  *	File name to be compiled
  *	Line number
- *	Flag that counts errors.
+ *	Error counter
  */
 
 const char *filename;
-int linecount = 1;
-int errors = 0;
+int			linecount 	= 1;
+int 		errors		= 0;

@@ -5,9 +5,9 @@
  *	Error handler functions prototype. 
  */
  
-void internal (const char * fmt, ...);
-void fatal    (const char * fmt, ...);
-void error    (const char * fmt, ...);
-void warning  (const char * fmt, ...);
+void internal (const char *fmt, ...);
+void fatal    (const char *fmt, ...);
+void error    (const char *fmt, ...);
+void warning  (const char *fmt, ...);
 
 #endif

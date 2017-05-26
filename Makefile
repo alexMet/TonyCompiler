@@ -8,7 +8,7 @@ else
 endif
 
 CC	= gcc
-CFLAGS	= -Wall -g -Wswitch
+CFLAGS	= -Wall -g
 
 CFILES   = error.c general.c symbol.c
 HFILES   = error.h general.h symbol.h

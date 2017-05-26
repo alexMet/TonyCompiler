@@ -4,8 +4,8 @@
 #include <stdbool.h>
 
 #include "error.h"
-#include "parser.h"
 #include "general.h"
+#include "parser.h"
 
 #define YY_NO_INPUT
 #define T_eof        0
@@ -85,47 +85,48 @@ sep		[\(\)\[\]\,\;\:]
 <COMMENT>[^*\n]+	{ /* nothing */ }
 
 \"({pri}|{esc})*\" { 
-	yylval.string = strdup(yytext); 
-	return T_string; 
+	yylval.name = strdup(yytext); 
+	return T_const_string; 
 }
 
 \"[^\"\n]*\" {
 	error("Invalid characters in string constant.");
-	yylval.string = "\0"; 
-	return T_string;
+	yylval.name = "\0"; 
+	return T_const_string;
 }
 
 \'({pri}|{esc})\' {
-	yylval.string = strdup(yytext); 
-	return T_chara;
+	yylval.name = strdup(yytext); 
+	return T_const_char;
 }
 
 \'({pri}|{esc}){2,}\' {
 	error("Too many characters in char constant.");
-	yylval.string = "\0"; 
-	return T_chara;
+	yylval.name = "\0"; 
+	return T_const_char;
 }
 
 \'[^\'\n]*\' {
 	error("Invalid characters in char constant.");
-	yylval.string = "\0"; 
-	return T_chara;
+	yylval.name = "\0"; 
+	return T_const_char;
 }
 
 {L}+({L}|{D}|_|\?)* {
-	yylval.string = strdup(yytext);
-	return T_var;
+	yylval.name = strdup(yytext);
+	return T_id;
 }
 
 {D}+ {
-	yylval.number = atoi(yytext);
-	return T_const;
+	// yylval.number = atoi(yytext);
+	yylval.name = strdup(yytext);
+	return T_const_int;
 }
 
 {D}+({L}|{D}|_|\?)* {
 	// TODO: edw mporei na einai eite metavlhth lathos eite arithmitikh stathera lathos
-	yylval.string = "\0";
-	return T_var;
+	yylval.name = "\0";
+	return T_id;
 }
 
 <<EOF>> {
