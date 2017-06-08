@@ -21,9 +21,9 @@ def main ():
 %	b := 9 * b
 
 	if i >= 0:
-		if i >= 11:
-			i := i + 1
-		end
+		i := i + 1
+	elsif i <= 10:
+		i := i + 3
 	else:
 		i := i + 2
 	end

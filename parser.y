@@ -215,7 +215,7 @@ stmt
 |   "exit"
 |   "return" expr
 |   "return" cond
-|   "if" expr_cond 
+|   "if" expr_cond ':'
     {
         if (!equalType($2.type, typeBoolean))
             error("type mismatch: expression after 'if' should be boolean");
@@ -225,8 +225,8 @@ stmt
         
         backpatch($2.TRUE, quadNext);
     }
-    ':' stmt_plus elseif_star "end"
-|   "for" simple_list ';' expr_cond ';' simple_list ':' stmt_plus "end"
+    stmt_plus { /* empty in order for expr_cond to be at place -4 */ } elseif_star "end"
+|   "for" simple_list ';' cond ';' simple_list ':' stmt_plus "end"
 ;
 
 elseif_star
