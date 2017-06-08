@@ -1,3 +1,30 @@
 def main ():
-	a := - b * b - 4 * a * c
+	int a, b, c, i
+	bool d, p
+
+%	a := - b * b - 5 * a * c
+
+%	d := 1 + 2 = 3 + 4
+%	d := (i < 200) and true
+%	d := (i < 101) < (i < 102)
+%	d := (i + 111) = false
+
+%	d := true
+%	i := i + 1
+
+%	if i < 10:
+%		b := b + 6
+%		i := i + 7
+%	else:
+%		i := i - 8
+%	end
+%	b := 9 * b
+
+	if i >= 0:
+		if i >= 11:
+			i := i + 1
+		end
+	else:
+		i := i + 2
+	end
 end     

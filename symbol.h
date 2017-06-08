@@ -52,10 +52,10 @@ typedef enum { false=0, true=1 } bool;
 
 /* Τύποι δεδομένων για την υλοποίηση των σταθερών */
 
-typedef int           	 RepInteger;         /* Ακέραιες                  */
-typedef unsigned char 	 RepBoolean;         /* Λογικές τιμές             */
-typedef char          	 RepChar;            /* Χαρακτήρες                */
-typedef const char		*RepString;          /* Συμβολοσειρές             */
+typedef int                RepInteger;         /* Ακέραιες                  */
+typedef unsigned char      RepBoolean;         /* Λογικές τιμές             */
+typedef char               RepChar;            /* Χαρακτήρες                */
+typedef const char        *RepString;          /* Συμβολοσειρές             */
 
 
 /* Τύποι δεδομένων και αποτελέσματος συναρτήσεων */
@@ -220,6 +220,6 @@ bool         equalType          (Type type1, Type type2);
 
 void         printType          (Type type);
 void         printMode          (PassMode mode);
-void		 printSymbolTable	(void);
+void         printSymbolTable   (void);
 
 #endif

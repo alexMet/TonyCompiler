@@ -5,9 +5,7 @@
 #include "general.h"
 #include "error.h"
 
-/*
- *	Error handler functions implementations. 
- */
+/* --- Error handler functions implementations. --- */
 
 void internal(const char *fmt, ...) {
    va_list ap;
@@ -42,6 +40,8 @@ void error(const char *fmt, ...) {
    vfprintf(stderr, fmt, ap);
    fprintf(stderr, "\n");
    va_end(ap);
+   
+   errors++;
 }
 
 void warning(const char *fmt, ...) {

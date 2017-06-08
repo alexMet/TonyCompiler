@@ -120,12 +120,12 @@ void dequeue_check_args(void) {
 	} atomic;
 }
 
-%token T_end 	"end"
-%token T_def 	"def"
-%token T_ref 	"ref"
-%token T_int 	"int"
-%token T_bool	"bool"
-%token T_char	"char"
+%token T_end     "end"
+%token T_def     "def"
+%token T_ref     "ref"
+%token T_int     "int"
+%token T_bool    "bool"
+%token T_char    "char"
 %token T_list	"list"
 %token T_decl	"decl"
 %token T_exit	"exit"
@@ -147,7 +147,17 @@ void dequeue_check_args(void) {
 %token T_greq	">="
 %token T_leeq	"<="
 %token T_anath	":="
-%token T_mod
+%token T_eq 	"="
+%token T_le 	"<"
+%token T_gr 	">"
+
+%token T_minus	"-"
+%token T_plus	"+"
+%token T_div	"/"
+%token T_mul	"*"
+%token T_mod    "mod"
+%token T_has    "#"
+
 %token T_then   "then"
 %token T_else	"else"
 %token T_elsif	"elsif"
@@ -160,10 +170,10 @@ void dequeue_check_args(void) {
 %left 		T_or
 %left 		T_and
 %right 		T_not
-%nonassoc 	'=' '<' '>' T_uneq T_greq T_leeq
-%right 		'#'
-%left 		'+' '-'
-%left 		'*' '/' T_mod
+%nonassoc 	T_eq T_gr T_le T_uneq T_greq T_leeq
+%right 		T_has
+%left 		T_plus T_minus
+%left 		T_mul T_div T_mod
 %left 		NEG POS
 
 %type<typ> 		expr
@@ -178,6 +188,7 @@ void dequeue_check_args(void) {
 %type<string> 	T_var
 %type<string> 	T_const_string
 %type<character> T_const_char
+%type<string>   binop
 
 %%
 
@@ -539,6 +550,8 @@ atom
 	}
 ;
 
+binop : "+" | "-" | "*" | "/" | "mod" ;
+
 expr
 :	atom
 	{	$$ = $1.typ; }
@@ -552,7 +565,7 @@ expr
 |	'(' expr ')'
 	{	$$ = $2; }
 
-|	'+' expr		
+|	"+" expr		
 	{
 		if ($2 == typeInteger) $$ = $2; 
 		else { 
@@ -561,7 +574,7 @@ expr
 		}
 	}
 
-|	'-' expr
+|	"-" expr
 	{ 
 		if ($2 == typeInteger) $$ = $2; 
 		else {
@@ -570,52 +583,18 @@ expr
 		}
 	}
 
-|	expr '+' expr 	
+|	expr binop expr 	
 	{
 		if ($1 == typeInteger && equalType($1, $3)) $$ = $1; 
 		else {
 			error("Type mismatch: t1 + t2 -> int + int");
 			return 1;
 		}
+		
+		printf("%s\n", $2);
 	}
 
-|	expr '-' expr 	
-	{
-		if ($1 == typeInteger && equalType($1, $3)) $$ = $1;
-		else {
-			error("Type mismatch: t1 - t2 -> int - int");
-			return 1;
-		}
-	}
-
-|	expr '*' expr 	
-	{ 
-		if ($1 == typeInteger && equalType($1, $3)) $$ = $1;
-		else {
-			error("Type mismatch: t1 * t2 -> int * int");
-			return 1;
-		}
-	}
-
-|	expr '/' expr 	
-	{ 
-		if ($1 == typeInteger && equalType($1, $3)) $$ = $1; 
-		else { 
-			error("Type mismatch: t1 / t2 -> int / int"); 
-			return 1; 
-		}
-	}
-
-|	expr T_mod expr	
-	{ 
-		if ($1 == typeInteger && equalType($1, $3)) $$ = $1;
-		else {
-			error("Type mismatch: t1 mod t2 -> int mod int"); 
-			return 1; 
-		} 
-	}
-
-|	expr '=' expr	
+|	expr "=" expr	
 	{ 
 		if (equalType($1, $3)) $$ = typeBoolean; 
 		else { 
@@ -624,7 +603,7 @@ expr
 		} 
 	}
 
-|	expr '<' expr 	
+|	expr "<" expr 	
 	{ 
 		if (equalType($1, $3)) $$ = typeBoolean; 
 		else { 
@@ -633,7 +612,7 @@ expr
 		}
 	}
 
-|	expr '>' expr 	
+|	expr ">" expr 	
 	{
 		if (equalType($1, $3)) $$ = typeBoolean;
 		else {
@@ -669,7 +648,7 @@ expr
 		}
 	}
 
-|	expr '#' expr
+|	expr "#" expr
 	{
 		if ($1 == $3) {
 			$$ = NULL; 

@@ -144,8 +144,8 @@ void destroySymbolTable() {
 }
 
 /*
- *	Open a new scope. Set the current scope as new's parent,
- *	increment the nesting level and set the new scope as current.
+ *  Open a new scope. Set the current scope as new's parent,
+ *  increment the nesting level and set the new scope as current.
  */
 void openScope() {
     Scope *newScope = (Scope *) new(sizeof(Scope));
@@ -163,8 +163,8 @@ void openScope() {
 }
 
 /*
- *	Destroy the current scope, free all the entries in this scope
- *	and also rearange the entries in the symbol table.
+ *  Destroy the current scope, free all the entries in this scope
+ *  and also rearange the entries in the symbol table's list.
  */
 void closeScope() {
     SymbolEntry *e = currentScope->entries;
@@ -183,8 +183,8 @@ void closeScope() {
 }
 
 /*
- *	Insert a new entry in the symbol table at the beginning of the
- *	list and also at the beginning of the scope entries.
+ *  Insert a new entry in the symbol table at the beginning of the
+ *  list and also at the beginning of the scope entries.
  */
 static void insertEntry(SymbolEntry *e) {
     e->nextHash             = hashTable[e->hashValue];
@@ -194,9 +194,9 @@ static void insertEntry(SymbolEntry *e) {
 }
 
 /* 
- *	Create and initialize a new symbol entry except of type and u.
- *	First we check if identifier already exists in this scope and 
- *	then we initialize.
+ *  Create and initialize a new symbol entry except of type and u.
+ *  First we check if identifier already exists in this scope and 
+ *  then we initialize.
  */
 static SymbolEntry *newEntry(const char *name) {
     SymbolEntry *e;
@@ -219,9 +219,9 @@ static SymbolEntry *newEntry(const char *name) {
 }
 
 /*
- *	Create a new variable and set the type, increment the reference
- *	count, decrement the current negative offset by the variable's
- *	size, set the variable's offset as the scope's current neg offset.
+ *  Create a new variable and set the type, increment the reference
+ *  count, decrement the current negative offset by the variable's
+ *  size, set the variable's offset as the scope's current neg offset.
  */
 SymbolEntry *newVariable(const char *name, Type type) {
     SymbolEntry *e = newEntry(name);
@@ -238,7 +238,7 @@ SymbolEntry *newVariable(const char *name, Type type) {
 }
 
 /*
- *	TODO Create a new constant
+ *  TODO Create a new constant
  */
 SymbolEntry *newConstant(const char *name, Type type, ...) {
     SymbolEntry *e;
@@ -257,11 +257,11 @@ SymbolEntry *newConstant(const char *name, Type type, ...) {
             value.vInteger = va_arg(ap, RepInteger);
             break;
         case TYPE_BOOLEAN:
-        	/* RepBool is promoted */
+            /* RepBool is promoted */
             value.vBoolean = va_arg(ap, int);
             break;
         case TYPE_CHAR:
-        	/* RepChar is promoted */
+            /* RepChar is promoted */
             value.vChar = va_arg(ap, int);
             break;
         case TYPE_ARRAY:
@@ -272,6 +272,10 @@ SymbolEntry *newConstant(const char *name, Type type, ...) {
                 strcpy((char *) (value.vString), str);
                 break;
             }
+        case TYPE_IARRAY:
+        case TYPE_POINTER:
+        case TYPE_VOID:
+            break;
         default:
             internal("Invalid type for constant");
     }
@@ -298,7 +302,12 @@ SymbolEntry *newConstant(const char *name, Type type, ...) {
             case TYPE_ARRAY:
                 strcpy(buffer, "\"");
                 strAppendString(buffer, value.vString);
-                strcat(buffer, "\"");           
+                strcat(buffer, "\"");
+                break;
+            case TYPE_IARRAY:
+            case TYPE_POINTER:
+            case TYPE_VOID:
+                break;
         }
         
         e = newEntry(buffer);
@@ -323,6 +332,11 @@ SymbolEntry *newConstant(const char *name, Type type, ...) {
                 break;
             case TYPE_ARRAY:
                 e->u.eConstant.value.vString = value.vString;
+                break;
+            case TYPE_IARRAY:
+            case TYPE_POINTER:
+            case TYPE_VOID:
+                break;
         }
     }
     
@@ -596,12 +610,18 @@ void destroyType(Type type) {
                 destroyType(type->refType);
                 delete(type);
             }
+            break;
+        case TYPE_INTEGER:
+        case TYPE_BOOLEAN:
+        case TYPE_CHAR:
+        case TYPE_VOID:
+            break;
     }
 }
 
 /* 
- *	Returns the size of the type. If it is an array we multiply the array's
- *	size with the size of the reference type of the array.
+ *  Returns the size of the type. If it is an array we multiply the array's
+ *  size with the size of the reference type of the array.
  */
 unsigned int sizeOfType(Type type) {
 
@@ -624,8 +644,8 @@ unsigned int sizeOfType(Type type) {
 }
 
 /* 
- *	Check if two types are of the same kind. If they are arrays then check
- *	if their sizes are the same. Also, check if their refType is the same.
+ *  Check if two types are of the same kind. If they are arrays then check
+ *  if their sizes are the same. Also, check if their refType is the same.
  */
 bool equalType(Type type1, Type type2) {
 
@@ -639,6 +659,11 @@ bool equalType(Type type1, Type type2) {
         case TYPE_IARRAY:
         case TYPE_POINTER:
             return equalType(type1->refType, type2->refType);
+        case TYPE_INTEGER:
+        case TYPE_BOOLEAN:
+        case TYPE_CHAR:
+        case TYPE_VOID:
+            break;
     }
     
     return true;        
@@ -690,8 +715,8 @@ void printMode(PassMode mode) {
 }
 
 /*
- *	Prints the symbol table, scope by scope. For each scope it prints
- *	the defined temporaries, variables and functions with their parameters.
+ *  Prints the symbol table, scope by scope. For each scope it prints
+ *  the defined temporaries, variables and functions with their parameters.
  */
 #define SHOW_OFFSETS
 
@@ -741,6 +766,8 @@ void printSymbolTable() {
                         break;
                     case ENTRY_TEMPORARY:
                         printf("[%d]", e->u.eTemporary.offset);
+                        break;
+                    case ENTRY_CONSTANT:
                         break;
 #endif
                 }
