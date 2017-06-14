@@ -144,15 +144,17 @@ void destroySymbolTable() {
 }
 
 /*
- *  Open a new scope. Set the current scope as new's parent,
- *  increment the nesting level and set the new scope as current.
+ *  Open a new scope. Set the current scope as new's parent, increment the nesting level
+ *  and set the new scope as current. Each scope represents a function and we set the 
+ *  returnType of the scope as the return type of the current function.
  */
-void openScope() {
+void openScope(Type t) {
     Scope *newScope = (Scope *) new(sizeof(Scope));
 
-    newScope->negOffset = START_NEGATIVE_OFFSET;
-    newScope->parent    = currentScope;
-    newScope->entries   = NULL;
+    newScope->negOffset  = START_NEGATIVE_OFFSET;
+    newScope->parent     = currentScope;
+    newScope->entries    = NULL;
+    newScope->returnType = t; // TODO prepei na to aukshsw kata ena?
 
     if (currentScope == NULL)
         newScope->nestingLevel = 1;
@@ -194,9 +196,8 @@ static void insertEntry(SymbolEntry *e) {
 }
 
 /* 
- *  Create and initialize a new symbol entry except of type and u.
- *  First we check if identifier already exists in this scope and 
- *  then we initialize.
+ *  Create and initialize a new symbol entry except of type and u. First we check
+ *  if identifier already exists in this scope and then we initialize.
  */
 static SymbolEntry *newEntry(const char *name) {
     SymbolEntry *e;
@@ -343,6 +344,14 @@ SymbolEntry *newConstant(const char *name, Type type, ...) {
     return e;
 }
 
+/*
+ *  We lookup the name of the new function that we want to create. If it
+ *  doesn't exist we create a new entry and set the pardef as DEFINE in order
+ *  to indicate that we are defining the function. If it exists and is a forward
+ *  declared function, we set the isForward flag to false and we set the pardef
+ *  as PARDEF_CHECK to indicate that we compare the declaration with the prototype.
+ *  At last, if it already exists and it isn't a function we print am error message.
+ */
 SymbolEntry *newFunction(const char *name) {
     SymbolEntry *e = lookupEntry(name, LOOKUP_CURRENT_SCOPE, false);
 
@@ -372,6 +381,10 @@ SymbolEntry *newFunction(const char *name) {
     }
 }
 
+/*
+ *  We add a new parameter to the function. If f isn't a function there's an internal error.
+ *  
+ */
 SymbolEntry *newParameter(const char *name, Type type, PassMode mode, SymbolEntry *f) {
     SymbolEntry *e;
     
@@ -440,6 +453,7 @@ static unsigned int fixOffset(SymbolEntry *args) {
     }
 }
 
+/* If the argument is a function, we declare it as forward. */
 void forwardFunction(SymbolEntry *f) {
     if (f->entryType != ENTRY_FUNCTION)
         internal("Cannot make a non-function forward");
@@ -536,6 +550,11 @@ void destroyEntry(SymbolEntry *e) {
     delete(e);        
 }
 
+/*
+ *  We look up an entry in the symbol table. There are two types of searching one is
+ *  to LOOKUP_ALL_SCOPES and the other is to LOOKUP_CURRENT_SCOPE. If err is true then
+ *  we also print an error message if we can't find the particular name.
+ */
 SymbolEntry *lookupEntry(const char *name, LookupType type, bool err) {
     unsigned int hashValue = PJW_hash(name) % hashTableSize;
     SymbolEntry *e         = hashTable[hashValue];

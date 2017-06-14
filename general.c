@@ -1,12 +1,17 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "symbol.h"
 #include "error.h"
 #include "general.h"
 
 Quad        quads[QUAD_ARRAY_SIZE];
+
+bool        OPTIMIZE    = false;
+FILE       *immStream;
+FILE       *finalStream;
 
 const char *filename;           // File name to be compiled
 int         linecount   = 1;    // Line number
@@ -36,7 +41,9 @@ Type getType(SymbolEntry *e) {
             return NULL;
     }
 }
-        
+
+/* --- Quad code production functions. --- */
+
 /*void initQuadArray() {*/
 /*    curQuadArraySize = QUAD_ARRAY_SIZE;*/
 /*    quads = (Quad **) new(QUAD_ARRAY_SIZE * sizeof(Quad *));*/
@@ -84,7 +91,7 @@ void condToExpr(SymbolEntry **p, LabelList *TRUE, LabelList *FALSE) {
         genQuad(":=", "false", "-",  (*p)->id);
     }
 }
- 
+
 void backpatch(LabelList *l, unsigned int label) {
     LabelList *cur;
     
@@ -120,6 +127,94 @@ void printLabelList(LabelList *l) {
 	    printf("%d, ", c->label);
 	    
 	printf("]\n");
+}
+
+/* --- Compiler initialization functions implementation. --- */
+
+void usage(char *compilerName) {
+    fprintf(stderr, 
+        "Usage: %s [-oit] [file.tony]\n\n"
+        "Options:\n"
+        "\t-o:\t\tturns on the optimization flag\n"
+        "\t-i:\t\toutput the intermediate code to stdout\n"
+        "\t-f:\t\toutput the assembly code to stdout\n\n"
+        "If -i or -f options are given, the compiler reads from stdin.\n"
+        "Otherwise, it reads from file.tony and outputs the intermidiate\n"
+        "code to file.imm and the final code to file.asm\n", compilerName);
+    exit(1);
+}
+
+void initFiles(int argc, char **argv) {
+    int opt;
+    bool opti = false, optf = false;
+    
+    while ((opt = getopt(argc, argv, "ofi")) != -1) {
+        switch (opt) {
+            case 'o':
+                OPTIMIZE = true;
+                break;
+            case 'i':
+                opti = true;
+                break;
+            case 'f':
+                optf = true;
+                break;
+            default:
+                usage(argv[0]);
+        }
+    }
+
+    if (opti && optf)
+        usage(argv[0]);
+    else if (opti) {
+        if (optind != argc)
+            usage(argv[0]);
+        
+        filename    = strdup("stdin");
+        yyin        = stdin;
+        immStream   = stdout;
+        finalStream = NULL;
+    }
+    else if (optf) {
+        if (optind != argc)
+            usage(argv[0]);
+            
+        filename    = strdup("stdin");
+        yyin        = stdin;
+        immStream   = NULL;
+        finalStream = stdout;
+    }
+    else {
+        if (optind != argc - 1)
+            usage(argv[0]);
+            
+        filename = strdup(argv[optind]);
+        char *e  = strrchr(filename, '.');
+        
+        if (strcmp(e, ".tony")) {
+            fprintf(stderr, "The input filename's extension must be .tony\n");
+            exit(1);
+        }
+
+        if (!(yyin = fopen(filename, "r"))) {
+            fprintf(stderr, "No such file '%s'\n", filename);
+            exit(1);
+        }
+        
+        strcpy(e, ".imm");
+        if (!(immStream = fopen(filename, "w"))) {
+            fprintf(stderr, "Cannot open output file '%s'\n", filename);
+            exit(1);
+        }
+
+        strcpy(e, ".asm");
+        if (!(finalStream = fopen(filename, "w"))) {
+            fprintf(stderr, "Cannot open output file '%s'\n", filename);
+            exit(1);
+        }
+        
+        strcpy(e, ".tony");
+    }
 }
 
 /* --- Memory handler functions implementation. --- */

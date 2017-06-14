@@ -30,11 +30,11 @@ lexer.c: lexer.l
 parser.c parser.h: parser.y
 	bison -v -d -o $@ $<
 	
-parser.o	: error.h general.h symbol.h parser.c
-lexer.o		: error.h general.h parser.h lexer.c
-error.o		: error.h general.h error.c
-general.o	: error.h general.h symbol.h general.c
-symbol.o	: error.h general.h symbol.h symbol.c
+parser.o	: parser.c error.h general.h symbol.h
+lexer.o		: lexer.c error.h general.h parser.h
+error.o		: error.c error.h general.h
+general.o	: general.c error.h general.h symbol.h
+symbol.o	: symbol.c error.h general.h symbol.h
 
 clean:
 	$(RM) $(OBJFILES) lexer.c parser.c parser.h parser.output *~

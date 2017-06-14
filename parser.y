@@ -3,26 +3,25 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include <unistd.h>
 
 #include "symbol.h"
 #include "error.h"
 #include "general.h"
 
 SymbolEntry *tmpPlace;           // Temporary symbol entry place
-LabelList   *tmpL1;
-LabelList   *tmpL2;
 Type         tmpType;            // Temporary type
 bool         fromFormal;         // Flag indicating variable decaration
 bool         fromExpr;
+PassMode     tmpPassMode;
 
 %}
 
 %union {
-    const char  *name;
-    Type         type;
-    SymbolEntry *place;
-    LabelList   *NEXT;
+    const char      *name;
+    Type             type;
+    SymbolEntry     *place;
+    LabelList       *NEXT;
+    unsigned int     tmpQuadNext;
     
     struct {
         bool         can_assign;
@@ -91,10 +90,9 @@ bool         fromExpr;
 
 %type<name>   T_id T_const_string T_const_int T_const_char
 
-%type<NEXT>   stmt stmt_plus
 %type<type>   type
 %type<cond>   expr_cond cond
-%type<place>  expr
+%type<place>  expr header call
 %type<lvalue> atom
 //%type<name> var_star
 
@@ -106,7 +104,7 @@ program
         initSymbolTable(SYMBOL_TABLE_SIZE);
         printSymbolTable();
     
-        openScope();
+        openScope(NULL);
         printSymbolTable();
     }
     func_def
@@ -124,11 +122,11 @@ program
 func_def
 :   "def" header ':' def_star 
     {
-        genQuad("unit", "main", "-", "-");
+        genQuad("unit", $2->id, "-", "-");
     }
     stmt_plus "end"
     {
-        genQuad("endu", "main", "-", "-");
+        genQuad("endu", $2->id, "-", "-");
     }
 ;
 
@@ -146,9 +144,45 @@ stmt_plus
 
 header
 :   type T_id '(' ')'
+    {
+        tmpPlace = newFunction($2);
+        openScope($1);
+        printSymbolTable();
+        endFunctionHeader(tmpPlace, $1);
+        $$ = tmpPlace;
+    }
 |   T_id '(' ')'
-|   type T_id '(' formal formal_star ')'
-|   T_id '(' formal formal_star ')'
+    {
+        tmpPlace = newFunction($1);
+        openScope(typeVoid);
+        printSymbolTable();
+        endFunctionHeader(tmpPlace, typeVoid);
+        $$ = tmpPlace;
+    }
+|   type T_id '('
+    {
+        tmpPlace = newFunction($2);
+        openScope($1);
+        printSymbolTable();
+    }
+    formal formal_star ')'
+    {
+        printSymbolTable();
+        endFunctionHeader(tmpPlace, $1);
+        $$ = tmpPlace;
+    }
+|   T_id '('
+    {       
+        tmpPlace = newFunction($1);
+        openScope(typeVoid);
+        printSymbolTable();
+    }
+    formal formal_star ')'
+    {
+        printSymbolTable();
+        endFunctionHeader(tmpPlace, typeVoid);
+        $$ = tmpPlace;
+    }
 ;
 
 formal_star
@@ -157,28 +191,32 @@ formal_star
 ;
 
 formal
-:   "ref" type T_id 
+:   "ref" type T_id
     {
-        // fromFormal = true;
-        // passMode = PASS_BY_REFERENCE;
+        fromFormal = true;
+        tmpPassMode = PASS_BY_REFERENCE;
+        
+        newParameter($3, $2, PASS_BY_REFERENCE, tmpPlace);
     }
     var_star
-|   type T_id var_star
+|   type T_id
+    {
+        fromFormal = true;
+        tmpPassMode = PASS_BY_VALUE;
+        
+        newParameter($2, $1, PASS_BY_VALUE, tmpPlace);
+    }
+    var_star
 ;
 
 var_star
 :   /* nothing */
 |   ',' T_id 
     {
-        if (fromFormal) {
-        
-        }
-        else {
-            if (!lookupEntry($2, LOOKUP_CURRENT_SCOPE, false))
-                newVariable($2, tmpType);
-            else
-                error("Duplicate identifier: %s", $2);
-        }
+        if (fromFormal)
+            newParameter($2, tmpType, tmpPassMode, tmpPlace);
+        else
+            newVariable($2, tmpType);
     }
     var_star
 ;
@@ -193,28 +231,47 @@ type
 
 func_decl
 :   "decl" header
+    {
+        forwardFunction($2);
+        closeScope();
+    }
 ;
 
 var_def
-:   type T_id 
+:   type T_id
     {
         fromFormal = false;
         
-        if (!lookupEntry($2, LOOKUP_ALL_SCOPES, false)) {
-            newVariable($2, $1);
-            destroyType($1);
-        }
-        else
-            error("Duplicate identifier: %s", $2);
+        newVariable($2, $1);
     }
     var_star
 ;
 
 stmt
 :   simple
-|   "exit"
-|   "return" expr
-|   "return" cond
+|   "exit" 
+    {
+        if (currentScope->returnType != typeVoid)
+            error("cannot call 'exit' from a non void function");
+            
+        genQuad("ret", "-", "-", "-");
+    }
+|   "return" expr_cond
+    {
+        if (!equalType(currentScope->returnType, $2.type))
+            error("type mismatch: between 'return' expression type and function return type");
+        
+        if (fromExpr)
+            genQuad("retv", $2.place->id, "-", "-");
+        else {
+            backpatch($2.TRUE, quadNext);
+            genQuad("retv", "true", "-", "-");
+            int q = quadNext + 2;
+            genQuad("jump", "-", "-", intToString(q));
+            backpatch($2.FALSE, quadNext);
+            genQuad("retv", "false", "-", "-");
+        }
+    }
 |   "if" expr_cond ':'
     {
         if (!equalType($2.type, typeBoolean))
@@ -226,7 +283,28 @@ stmt
         backpatch($2.TRUE, quadNext);
     }
     stmt_plus { /* empty in order for expr_cond to be at place -4 */ } elseif_star "end"
-|   "for" simple_list ';' cond ';' simple_list ':' stmt_plus "end"
+|   "for" simple_list ';' { $<tmpQuadNext>$ = quadNext; } expr_cond ';'
+    {
+        if (!equalType($5.type, typeBoolean))
+            error("type mismatch: expression after 'if' should be boolean");
+            
+        if (fromExpr)
+            exprToCond($5.place, &($5.TRUE), &($5.FALSE));
+        
+        backpatch($5.TRUE, quadNext);
+        $<tmpQuadNext>$ = quadNext;
+    }
+    simple_list ':'
+    {
+        genQuad("jump", "-", "-", intToString($<tmpQuadNext>4));
+        backpatch($5.TRUE, quadNext);
+    } 
+    stmt_plus 
+    {
+        genQuad("jump", "-", "-", intToString($<tmpQuadNext>7));
+        backpatch($5.FALSE, quadNext);
+    }
+    "end"
 ;
 
 elseif_star
@@ -285,6 +363,11 @@ simple
         }
     }
 |   call
+    {
+        // TODO get the function's place
+        if (getType($1) != typeVoid)
+            warning("ignoring a non void function's return value");
+    }
 ;
 
 simple_list
@@ -298,28 +381,94 @@ simple_star
 
 call
 :   T_id '(' ')'
-|   T_id '(' expr expr_star ')'
-|   T_id '(' cond expr_star ')'
+    {
+        if (!($$ = lookupEntry($1, LOOKUP_ALL_SCOPES, true)))
+            $$ = newVariable($1, typeInteger); // TODO den yparxei h synarthsh
+            
+        if ($$->entryType != ENTRY_FUNCTION)
+            error("***");
+            
+        if (getType($$) != typeVoid) {
+            $$ = newTemporary(getType($$));
+            genQuad("par", $$->id, "RET", "-");
+        }
+            
+        genQuad("call", "-", "-", $1);
+        
+        // TODO check function parameters
+    }
+|   T_id '('
+    {
+        // TODO fix this because a call can contain a call and it will overide the tmpPlace
+        
+        if (!(tmpPlace = lookupEntry($1, LOOKUP_ALL_SCOPES, true)))
+            tmpPlace = newVariable($1, typeInteger); // TODO den yparxei h synarthsh
+            
+        if (tmpPlace->entryType != ENTRY_FUNCTION)
+            error("***");
+            
+        // TODO check function parameters
+    }
+    expr_cond
+    {
+        if (fromExpr)
+            genQuad("par", $4.place->id, "?", "-");
+        else {
+            // TODO if pass by ref then maybe error?
+            backpatch($4.TRUE, quadNext);
+            genQuad("par", "true", "?", "-");
+            int q = quadNext + 2;
+            genQuad("jump", "-", "-", intToString(q));
+            backpatch($4.FALSE, quadNext);
+            genQuad("par", "false", "?", "-");
+        }
+    }
+    expr_star ')'
+    {
+        if (getType(tmpPlace) != typeVoid) {
+            $$ = newTemporary(getType(tmpPlace));
+            genQuad("par", $$->id, "RET", "-");
+        }
+            
+        genQuad("call", "-", "-", $1);
+    }
 ;
 
 expr_star
-:   /* nothing */    
-|   ',' expr expr_star
-|   ',' cond expr_star
+:   /* nothing */ // TODO check if exausted all function arguments
+|   ',' expr_cond
+    {
+        // TODO check types between function argument and expr
+        if (fromExpr)
+            genQuad("par", $2.place->id, "?", "-");
+        else {
+            // TODO if pass by ref then maybe error?
+            backpatch($2.TRUE, quadNext);
+            genQuad("par", "true", "?", "-");
+            int q = quadNext + 2;
+            genQuad("jump", "-", "-", intToString(q));
+            backpatch($2.FALSE, quadNext);
+            genQuad("par", "false", "?", "-");
+        }
+    }
+    expr_star
 ;
 
 atom
 :   T_id
     {
-        if (!(tmpPlace = lookupEntry($1, LOOKUP_ALL_SCOPES, true)))
-            tmpPlace = newVariable($1, typeInteger);
+        if (!($$.place = lookupEntry($1, LOOKUP_ALL_SCOPES, true)))
+            $$.place = newVariable($1, typeInteger); // TODO den yparxei to id
             
-        $$.place = tmpPlace;
         $$.can_assign = true;
     }
 |   T_const_string
 |   atom '[' expr ']'
 |   call
+    {
+        $$.place      = $1;
+        $$.can_assign = false;
+    }
 ;
 
 expr_cond
@@ -553,24 +702,22 @@ expr
 |   "tail" '(' expr ')'
 ;
 
-        
+
 %%
 
 
 void yyerror(const char *msg) {
-    fprintf(stderr, "syntax error: %s, line: %d\n", msg, linecount);
+    error("syntax error %s", msg);        
     exit(1);
 }
 
 int main(int argc, char **argv) {
-    FILE *fd = fopen(argv[1], "r");
-    filename = argv[1];
-    dup2(fileno(fd), fileno(stdin));
-    
+    initFiles(argc, argv);
+        
     printf("Size of symbolEntry * = %ld\n", sizeof(SymbolEntry *));
     printf("Size of int           = %ld\n", sizeof(int));
     printf("Size of char          = %ld\n", sizeof(char));
-    printf("Size of const char *  = %ld\n\n\n\n", sizeof(const char *));
+    printf("Size of const char *  = %ld\n\n", sizeof(const char *));
         
     return yyparse();
 }

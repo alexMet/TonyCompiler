@@ -23,9 +23,16 @@ struct label_list {
 
 extern Quad          quads[];
 
+extern bool          OPTIMIZE;
+extern FILE         *immStream;
+extern FILE         *finalStream;
+
 extern const char   *filename;
 extern int           linecount;
 extern int           errors;
+
+extern FILE         *yyin;
+extern char         *yytext;
 
 /* --- Quad generator functions prototype. --- */
 
@@ -44,12 +51,17 @@ LabelList  *merge            (LabelList *l1, LabelList *l2);
 
 void        printLabelList   (LabelList *l);
 
+/* --- Compiler initialization functions prototype. --- */
+
+void        usage            (char *compilerName);
+void        initFiles        (int argc, char **argv);
+
 /* --- Memory handler functions prototype. --- */
  
-void       *new     (size_t);
-void        delete  (void *);
+void       *new              (size_t);
+void        delete           (void *);
 
-extern int  yylex   (void);
-extern void yyerror (const char msg []);
+extern int  yylex            (void);
+extern void yyerror          (const char msg[]);
 
 #endif

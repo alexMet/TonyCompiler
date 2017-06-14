@@ -165,6 +165,7 @@ struct Scope_tag {
     unsigned int  negOffset;                /* Τρέχον αρνητικό offset */
     Scope        *parent;                   /* Περιβάλλουσα εμβέλεια  */
     SymbolEntry  *entries;                  /* Σύμβολα της εμβέλειας  */
+    Type          returnType;               /* Function's return type */
 };
 
 
@@ -197,7 +198,7 @@ extern const Type typeChar;
 void         initSymbolTable    (unsigned int size);
 void         destroySymbolTable (void);
 
-void         openScope          (void);
+void         openScope          (Type type);
 void         closeScope         (void);
 
 SymbolEntry *newVariable        (const char *name, Type type);
