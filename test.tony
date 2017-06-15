@@ -1,7 +1,21 @@
-def main ():
+def proc (int n):
+
+	def koo(int i):
+		i := i + 1
+	end
+
+	int i
+	
+	i := 7 * n
+	if i > 100:
+		n := 0
+	end
+end
+
+<* def main ():
 	int x
 
-	def int foo(int n):
+<*	def int foo(int n):
 		int s, i
 
 		for s := 0, i := 2; i <= n; i := i + 1:
@@ -10,12 +24,14 @@ def main ():
 		
 		return s
 	end
+*>
 
 	decl proc(int i; ref int b)
 	decl bool f(bool b)
 
 	bool p
 
+	i := 2 + 4 * 5 + 1
 	p := f(f(p or q))
 	proc(3, p)
 

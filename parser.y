@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <signal.h>
 
 #include "symbol.h"
 #include "error.h"
@@ -103,18 +104,15 @@ program
 :   {
         initSymbolTable(SYMBOL_TABLE_SIZE);
         printSymbolTable();
-    
         openScope(NULL);
+        initLibFuns();
         printSymbolTable();
     }
     func_def
     {
         closeScope();
         printSymbolTable();
-
         destroySymbolTable();
-        
-        fprintf(stderr, "\nFound %d errors.\n", errors);
         printQuads();
     }
 ;
@@ -122,11 +120,12 @@ program
 func_def
 :   "def" header ':' def_star 
     {
-        genQuad("unit", $2->id, "-", "-");
+        genQuad(QUNIT, $2->id, "-", "-");
     }
     stmt_plus "end"
     {
-        genQuad("endu", $2->id, "-", "-");
+        genQuad(QENDU, $2->id, "-", "-");
+        closeScope();
     }
 ;
 
@@ -134,7 +133,7 @@ def_star
 :   /* nothing */
 |   func_def def_star
 |   func_decl def_star
-|   var_def { printSymbolTable(); } def_star
+|   var_def def_star
 ;
 
 stmt_plus
@@ -145,29 +144,23 @@ stmt_plus
 header
 :   type T_id '(' ')'
     {
-        tmpPlace = newFunction($2);
+        $$ = tmpPlace = newFunction($2);
         openScope($1);
-        printSymbolTable();
         endFunctionHeader(tmpPlace, $1);
-        $$ = tmpPlace;
     }
 |   T_id '(' ')'
     {
-        tmpPlace = newFunction($1);
+        $$ = tmpPlace = newFunction($1);
         openScope(typeVoid);
-        printSymbolTable();
         endFunctionHeader(tmpPlace, typeVoid);
-        $$ = tmpPlace;
     }
 |   type T_id '('
     {
         tmpPlace = newFunction($2);
         openScope($1);
-        printSymbolTable();
     }
     formal formal_star ')'
     {
-        printSymbolTable();
         endFunctionHeader(tmpPlace, $1);
         $$ = tmpPlace;
     }
@@ -175,11 +168,9 @@ header
     {       
         tmpPlace = newFunction($1);
         openScope(typeVoid);
-        printSymbolTable();
     }
     formal formal_star ')'
     {
-        printSymbolTable();
         endFunctionHeader(tmpPlace, typeVoid);
         $$ = tmpPlace;
     }
@@ -195,7 +186,6 @@ formal
     {
         fromFormal = true;
         tmpPassMode = PASS_BY_REFERENCE;
-        
         newParameter($3, $2, PASS_BY_REFERENCE, tmpPlace);
     }
     var_star
@@ -203,7 +193,6 @@ formal
     {
         fromFormal = true;
         tmpPassMode = PASS_BY_VALUE;
-        
         newParameter($2, $1, PASS_BY_VALUE, tmpPlace);
     }
     var_star
@@ -226,7 +215,7 @@ type
 |   "bool"                 { $$ = tmpType = typeBoolean; }
 |   "char"                 { $$ = tmpType = typeChar; }
 |   type '[' ']'           { $$ = tmpType = typeIArray($1); }
-|   "list" '[' type ']'    { /* TODO typeList */ }
+|   "list" '[' type ']'    { $$ = tmpType = typeList($3); }
 ;
 
 func_decl
@@ -241,7 +230,6 @@ var_def
 :   type T_id
     {
         fromFormal = false;
-        
         newVariable($2, $1);
     }
     var_star
@@ -254,22 +242,25 @@ stmt
         if (currentScope->returnType != typeVoid)
             error("cannot call 'exit' from a non void function");
             
-        genQuad("ret", "-", "-", "-");
+        genQuad(QRET, "-", "-", "-");
     }
 |   "return" expr_cond
     {
+        if (currentScope->returnType == typeVoid)
+            error("trying to return a value from a void function");
+            
         if (!equalType(currentScope->returnType, $2.type))
             error("type mismatch: between 'return' expression type and function return type");
         
         if (fromExpr)
-            genQuad("retv", $2.place->id, "-", "-");
+            genQuad(QRETV, $2.place->id, "-", "-");
         else {
             backpatch($2.TRUE, quadNext);
-            genQuad("retv", "true", "-", "-");
+            genQuad(QRETV, "true", "-", "-");
             int q = quadNext + 2;
-            genQuad("jump", "-", "-", intToString(q));
+            genQuad(QJMP, "-", "-", intToString(q));
             backpatch($2.FALSE, quadNext);
-            genQuad("retv", "false", "-", "-");
+            genQuad(QRETV, "false", "-", "-");
         }
     }
 |   "if" expr_cond ':'
@@ -296,12 +287,12 @@ stmt
     }
     simple_list ':'
     {
-        genQuad("jump", "-", "-", intToString($<tmpQuadNext>4));
+        genQuad(QJMP, "-", "-", intToString($<tmpQuadNext>4));
         backpatch($5.TRUE, quadNext);
     } 
     stmt_plus 
     {
-        genQuad("jump", "-", "-", intToString($<tmpQuadNext>7));
+        genQuad(QJMP, "-", "-", intToString($<tmpQuadNext>7));
         backpatch($5.FALSE, quadNext);
     }
     "end"
@@ -313,7 +304,7 @@ elseif_star
     {
         // TODO tha mporousa na kanw merge ola ta endiamesa jump kai sto telos backpatch
         $<NEXT>$ = makeList(quadNext);
-        genQuad("jump", "-", "-", "*");
+        genQuad(QJMP, "-", "-", "*");
         backpatch($<cond>-4.FALSE, quadNext);
     }
     expr_cond ':'
@@ -335,7 +326,7 @@ else
     {
         // TODO tha mporousa na kanw merge ola ta endiamesa jump kai sto telos backpatch
         $<NEXT>$ = makeList(quadNext);
-        genQuad("jump", "-", "-", "*");
+        genQuad(QJMP, "-", "-", "*");
         backpatch($<cond>-4.FALSE, quadNext);
     }
     stmt_plus { backpatch($<NEXT>3, quadNext); }
@@ -352,20 +343,19 @@ simple
             error("assignment should be between equal types");
             
         if (fromExpr)
-            genQuad(":=", $3.place->id, "-", $1.place->id);
+            genQuad(QASSIGN, $3.place->id, "-", $1.place->id);
         else {
             backpatch($3.TRUE, quadNext);
-            genQuad(":=", "true", "-", $1.place->id);
+            genQuad(QASSIGN, "true", "-", $1.place->id);
             int q = quadNext + 2;
-            genQuad("jump", "-", "-", intToString(q));
+            genQuad(QJMP, "-", "-", intToString(q));
             backpatch($3.FALSE, quadNext);
-            genQuad(":=", "false", "-", $1.place->id);
+            genQuad(QASSIGN, "false", "-", $1.place->id);
         }
     }
 |   call
     {
-        // TODO get the function's place
-        if (getType($1) != typeVoid)
+        if (getType($1) != typeAny)
             warning("ignoring a non void function's return value");
     }
 ;
@@ -383,28 +373,28 @@ call
 :   T_id '(' ')'
     {
         if (!($$ = lookupEntry($1, LOOKUP_ALL_SCOPES, true)))
-            $$ = newVariable($1, typeInteger); // TODO den yparxei h synarthsh
+            $$ = newVariable($1, typeAny); // TODO den yparxei h synarthsh
             
         if ($$->entryType != ENTRY_FUNCTION)
             error("***");
             
         if (getType($$) != typeVoid) {
             $$ = newTemporary(getType($$));
-            genQuad("par", $$->id, "RET", "-");
+            genQuad(QPAR, $$->id, "RET", "-");
         }
+        else
+            $$ = newTemporary(typeAny);
             
-        genQuad("call", "-", "-", $1);
+        genQuad(QCALL, "-", "-", $1);
         
         // TODO check function parameters
     }
 |   T_id '('
     {
-        // TODO fix this because a call can contain a call and it will overide the tmpPlace
-        
-        if (!(tmpPlace = lookupEntry($1, LOOKUP_ALL_SCOPES, true)))
-            tmpPlace = newVariable($1, typeInteger); // TODO den yparxei h synarthsh
+        if (!($<place>$ = lookupEntry($1, LOOKUP_ALL_SCOPES, true)))
+            $<place>$ = newVariable($1, typeAny); // TODO den yparxei h synarthsh
             
-        if (tmpPlace->entryType != ENTRY_FUNCTION)
+        if ($<place>$->entryType != ENTRY_FUNCTION)
             error("***");
             
         // TODO check function parameters
@@ -412,25 +402,27 @@ call
     expr_cond
     {
         if (fromExpr)
-            genQuad("par", $4.place->id, "?", "-");
+            genQuad(QPAR, $4.place->id, "?", "-");
         else {
             // TODO if pass by ref then maybe error?
             backpatch($4.TRUE, quadNext);
-            genQuad("par", "true", "?", "-");
+            genQuad(QPAR, "true", "?", "-");
             int q = quadNext + 2;
-            genQuad("jump", "-", "-", intToString(q));
+            genQuad(QJMP, "-", "-", intToString(q));
             backpatch($4.FALSE, quadNext);
-            genQuad("par", "false", "?", "-");
+            genQuad(QPAR, "false", "?", "-");
         }
     }
     expr_star ')'
     {
-        if (getType(tmpPlace) != typeVoid) {
-            $$ = newTemporary(getType(tmpPlace));
-            genQuad("par", $$->id, "RET", "-");
+        if (getType($<place>3) != typeVoid) {
+            $$ = newTemporary(getType($<place>3));
+            genQuad(QPAR, $$->id, "RET", "-");
         }
+        else
+            $$ = newTemporary(typeAny);
             
-        genQuad("call", "-", "-", $1);
+        genQuad(QCALL, "-", "-", $1);
     }
 ;
 
@@ -440,15 +432,15 @@ expr_star
     {
         // TODO check types between function argument and expr
         if (fromExpr)
-            genQuad("par", $2.place->id, "?", "-");
+            genQuad(QPAR, $2.place->id, "?", "-");
         else {
             // TODO if pass by ref then maybe error?
             backpatch($2.TRUE, quadNext);
-            genQuad("par", "true", "?", "-");
+            genQuad(QPAR, "true", "?", "-");
             int q = quadNext + 2;
-            genQuad("jump", "-", "-", intToString(q));
+            genQuad(QJMP, "-", "-", intToString(q));
             backpatch($2.FALSE, quadNext);
-            genQuad("par", "false", "?", "-");
+            genQuad(QPAR, "false", "?", "-");
         }
     }
     expr_star
@@ -458,14 +450,29 @@ atom
 :   T_id
     {
         if (!($$.place = lookupEntry($1, LOOKUP_ALL_SCOPES, true)))
-            $$.place = newVariable($1, typeInteger); // TODO den yparxei to id
+            $$.place = newVariable($1, typeAny); // TODO den yparxei to id
             
         $$.can_assign = true;
     }
 |   T_const_string
-|   atom '[' expr ']'
+    { 
+        if (!($$.place = lookupEntry($1, LOOKUP_ALL_SCOPES, false)))
+            $$.place = newConstant($1, typeIArray(typeChar));
+            
+        $$.can_assign = false;
+    }
+|   atom '[' expr_cond ']'
+    {
+        // TODO check if atom is an array
+        
+        if (!equalType($3.type, typeInteger))
+            error("type mismatch: expression in brackets should be int");
+    }
 |   call
     {
+        if (getType($1) == typeAny)
+            error("trying to get return value from a void function");
+            
         $$.place      = $1;
         $$.can_assign = false;
     }
@@ -498,7 +505,7 @@ cond
     }
 |   expr_cond '=' { condToExpr(&($1.place), $1.TRUE, $1.FALSE); } expr_cond
     {
-        if (!(equalType($1.type, $4.type) && ($1.type == typeInteger || $1.type == typeBoolean || $1.type == typeChar)))
+        if (!(equalType($1.type, $4.type) && isBasicType($1.type)))
             error("type mismatch: t1 = t2. Comparison should be between same basic types");
 
         condToExpr(&($4.place), $4.TRUE, $4.FALSE);
@@ -506,13 +513,13 @@ cond
         $$.place = NULL;
         $$.type  = typeBoolean;
         $$.TRUE  = makeList(quadNext);
-        genQuad("=", $1.place->id, $4.place->id, "*");
+        genQuad(QEQ, $1.place->id, $4.place->id, "*");
         $$.FALSE = makeList(quadNext);
-        genQuad("jump", "-", "-", "*");
+        genQuad(QJMP, "-", "-", "*");
     }
 |   expr_cond '<' { condToExpr(&($1.place), $1.TRUE, $1.FALSE); } expr_cond
     {        
-        if (!(equalType($1.type, $4.type) && ($1.type == typeInteger || $1.type == typeBoolean || $1.type == typeChar)))
+        if (!(equalType($1.type, $4.type) && isBasicType($1.type)))
             error("type mismatch: t1 < t2. Comparison should be between same basic types");
         
         condToExpr(&($4.place), $4.TRUE, $4.FALSE);
@@ -520,13 +527,13 @@ cond
         $$.place = NULL;
         $$.type  = typeBoolean;
         $$.TRUE  = makeList(quadNext);
-        genQuad("<", $1.place->id, $4.place->id, "*");
+        genQuad(QLT, $1.place->id, $4.place->id, "*");
         $$.FALSE = makeList(quadNext);
-        genQuad("jump", "-", "-", "*");
+        genQuad(QJMP, "-", "-", "*");
     }
 |   expr_cond '>' { condToExpr(&($1.place), $1.TRUE, $1.FALSE); } expr_cond
     {
-        if (!(equalType($1.type, $4.type) && ($1.type == typeInteger || $1.type == typeBoolean || $1.type == typeChar)))
+        if (!(equalType($1.type, $4.type) && isBasicType($1.type)))
             error("type mismatch: t1 > t2. Comparison should be between same basic types");
         
         condToExpr(&($4.place), $4.TRUE, $4.FALSE);
@@ -534,13 +541,13 @@ cond
         $$.place = NULL;
         $$.type  = typeBoolean;
         $$.TRUE  = makeList(quadNext);
-        genQuad(">", $1.place->id, $4.place->id, "*");
+        genQuad(QGT, $1.place->id, $4.place->id, "*");
         $$.FALSE = makeList(quadNext);
-        genQuad("jump", "-", "-", "*");
+        genQuad(QJMP, "-", "-", "*");
     }
 |   expr_cond "<>" { condToExpr(&($1.place), $1.TRUE, $1.FALSE); } expr_cond
     {
-        if (!(equalType($1.type, $4.type) && ($1.type == typeInteger || $1.type == typeBoolean || $1.type == typeChar)))
+        if (!(equalType($1.type, $4.type) && isBasicType($1.type)))
             error("type mismatch: t1 <> t2. Comparison should be between same basic types");
         
         condToExpr(&($4.place), $4.TRUE, $4.FALSE);
@@ -548,13 +555,13 @@ cond
         $$.place = NULL;
         $$.type  = typeBoolean;
         $$.TRUE  = makeList(quadNext);
-        genQuad("<>", $1.place->id, $4.place->id, "*");
+        genQuad(QNE, $1.place->id, $4.place->id, "*");
         $$.FALSE = makeList(quadNext);
-        genQuad("jump", "-", "-", "*");
+        genQuad(QJMP, "-", "-", "*");
     }
 |   expr_cond "<=" { condToExpr(&($1.place), $1.TRUE, $1.FALSE); } expr_cond
     {
-        if (!(equalType($1.type, $4.type) && ($1.type == typeInteger || $1.type == typeBoolean || $1.type == typeChar)))
+        if (!(equalType($1.type, $4.type) && isBasicType($1.type)))
             error("type mismatch: t1 <= t2. Comparison should be between same basic types");
         
         condToExpr(&($4.place), $4.TRUE, $4.FALSE);
@@ -562,13 +569,13 @@ cond
         $$.place = NULL;
         $$.type  = typeBoolean;
         $$.TRUE  = makeList(quadNext);
-        genQuad("<=", $1.place->id, $4.place->id, "*");
+        genQuad(QLE, $1.place->id, $4.place->id, "*");
         $$.FALSE = makeList(quadNext);
-        genQuad("jump", "-", "-", "*");
+        genQuad(QJMP, "-", "-", "*");
     }
 |   expr_cond ">=" { condToExpr(&($1.place), $1.TRUE, $1.FALSE); } expr_cond
     {
-        if (!(equalType($1.type, $4.type) && ($1.type == typeInteger || $1.type == typeBoolean || $1.type == typeChar)))
+        if (!(equalType($1.type, $4.type) && isBasicType($1.type)))
             error("type mismatch: t1 >= t2. Comparison should be between same basic types");
         
         condToExpr(&($4.place), $4.TRUE, $4.FALSE);
@@ -576,13 +583,13 @@ cond
         $$.place = NULL;
         $$.type  = typeBoolean;
         $$.TRUE  = makeList(quadNext);
-        genQuad(">=", $1.place->id, $4.place->id, "*");
+        genQuad(QGE, $1.place->id, $4.place->id, "*");
         $$.FALSE = makeList(quadNext);
-        genQuad("jump", "-", "-", "*");
+        genQuad(QJMP, "-", "-", "*");
     }
 |   "not" expr_cond
     {
-        if ($2.type != typeBoolean)
+        if (!equalType($2.type, typeBoolean))
             error("operator and operand don't agree: not t1 -> not bool");
         
         if (fromExpr) exprToCond($2.place, &($2.TRUE), &($2.FALSE));
@@ -594,7 +601,7 @@ cond
     }
 |   expr_cond "and" 
     {
-        if ($1.type != typeBoolean)
+        if (!equalType($1.type, typeBoolean))
             error("operator and operand don't agree: t1 and t2 -> bool and bool");
 
         if (fromExpr) exprToCond($1.place, &($1.TRUE), &($1.FALSE));
@@ -602,7 +609,7 @@ cond
     }
     expr_cond
     {
-        if ($4.type != typeBoolean)
+        if (!equalType($4.type, typeBoolean))
             error("operator and operand don't agree: t1 and t2 -> bool and bool");
             
         if (fromExpr) exprToCond($4.place, &($4.TRUE), &($4.FALSE));
@@ -613,7 +620,7 @@ cond
     }
 |   expr_cond "or" 
     {
-        if ($1.type != typeBoolean)
+        if (!equalType($1.type, typeBoolean))
             error("operator and operand don't agree: t1 or t2 -> bool or bool");
 
         if (fromExpr) exprToCond($1.place, &($1.TRUE), &($1.FALSE));
@@ -621,7 +628,7 @@ cond
     }
     expr_cond
     {
-        if ($4.type != typeBoolean)
+        if (!equalType($4.type, typeBoolean))
             error("operator and operand don't agree: t1 or t2 -> bool or bool");
 
         if (fromExpr) exprToCond($4.place, &($4.TRUE), &($4.FALSE));
@@ -630,74 +637,74 @@ cond
         $$.TRUE  = merge($1.TRUE, $4.TRUE);
         $$.FALSE = $4.FALSE;
     }
+|   "nil?" '(' expr ')'
 ;
 
 expr
 :   atom            { $$ = $1.place; }
-|   T_const_int     { $$ = newConstant($1, typeInteger); }
-|   T_const_char    { $$ = newConstant($1, typeChar); }
+|   T_const_int     { if (!($$ = lookupEntry($1, LOOKUP_ALL_SCOPES, false))) $$ = newConstant($1, typeInteger); }
+|   T_const_char    { if (!($$ = lookupEntry($1, LOOKUP_ALL_SCOPES, false))) $$ = newConstant($1, typeChar); }
 |   '(' expr ')'    { $$ = $2; }
-|   "true"          { $$ = newConstant("true", typeBoolean); }
-|   "false"         { $$ = newConstant("false", typeBoolean); }
+|   "true"          { if (!($$ = lookupEntry("true", LOOKUP_ALL_SCOPES, false))) $$ = newConstant("true", typeBoolean); }
+|   "false"         { if (!($$ = lookupEntry("false", LOOKUP_ALL_SCOPES, false))) $$ = newConstant("false", typeBoolean); }
 |   '+' expr %prec POS
     { 
-        if (getType($2) != typeInteger)
+        if (!equalType(getType($2), typeInteger))
             error("operator and operand don't agree: + t1 -> + int");
         
         $$ = $2; 
     }
 |   '-' expr %prec NEG
     {
-        if (getType($2) != typeInteger)
+        if (!equalType(getType($2), typeInteger))
             error("operator and operand don't agree: - t1 -> - int");
             
         $$ = newTemporary(typeInteger);
-        genQuad("-", $2->id, "-", $$->id);
+        genQuad(QMINUS, $2->id, "-", $$->id);
     }
 |   expr '+' expr
     {
-        if (getType($1) != typeInteger || getType($3) != typeInteger)
+        if (!equalType(getType($1), typeInteger) || !equalType(getType($3), typeInteger))
             error("operator and operand don't agree: t1 + t2 -> int + int");
             
         $$ = newTemporary(typeInteger);
-        genQuad("+", $1->id, $3->id, $$->id);
+        genQuad(QPLUS, $1->id, $3->id, $$->id);
     }
 |   expr '-' expr
     {
-        if (getType($1) != typeInteger || getType($3) != typeInteger)
+        if (!equalType(getType($1), typeInteger) || !equalType(getType($3), typeInteger))
             error("operator and operand don't agree: t1 - t2 -> int - int");
             
         $$ = newTemporary(typeInteger);
-        genQuad("-", $1->id, $3->id, $$->id);
+        genQuad(QMINUS, $1->id, $3->id, $$->id);
     }
 |   expr '*' expr 
     {
-        if (getType($1) != typeInteger || getType($3) != typeInteger)
+        if (!equalType(getType($1), typeInteger) || !equalType(getType($3), typeInteger))
             error("operator and operand don't agree: t1 * t2 -> int * int");
             
         $$ = newTemporary(typeInteger);
-        genQuad("*", $1->id, $3->id, $$->id);
+        genQuad(QMULT, $1->id, $3->id, $$->id);
     }
 |   expr '/' expr
     {
-        if (getType($1) != typeInteger || getType($3) != typeInteger)
+        if (!equalType(getType($1), typeInteger) || !equalType(getType($3), typeInteger))
             error("operator and operand don't agree: t1 / t2 -> int / int");
             
         $$ = newTemporary(typeInteger);
-        genQuad("/", $1->id, $3->id, $$->id);
+        genQuad(QDIV, $1->id, $3->id, $$->id);
     }
 |   expr "mod" expr
     {
-        if (getType($1) != typeInteger || getType($3) != typeInteger)
+        if (!equalType(getType($1), typeInteger) || !equalType(getType($3), typeInteger))
             error("operator and operand don't agree: t1 mod t2 -> int mod int");
             
         $$ = newTemporary(typeInteger);
-        genQuad("mod", $1->id, $3->id, $$->id);
+        genQuad(QMOD, $1->id, $3->id, $$->id);
     }
 |   expr '#' expr
 |   "new" type '[' expr ']'
-|   "nil"
-|   "nil?" '(' expr ')'
+|   "nil" { if (!($$ = lookupEntry("nil", LOOKUP_ALL_SCOPES, false))) $$ = newConstant("nil", typeBoolean); }
 |   "head" '(' expr ')'
 |   "tail" '(' expr ')'
 ;
@@ -705,6 +712,10 @@ expr
 
 %%
 
+void sigsegv_hndler(int signum) {
+	printf("eskase sthn %d tou %s\n", linecount, filename);
+	exit(1);
+}
 
 void yyerror(const char *msg) {
     error("syntax error %s", msg);        
@@ -712,12 +723,14 @@ void yyerror(const char *msg) {
 }
 
 int main(int argc, char **argv) {
+    int ret;
+    signal(SIGSEGV, sigsegv_hndler);
     initFiles(argc, argv);
+    
+    ret = yyparse();
+    
+    fprintf(stderr, "\nFound %d error%s and %d warning%s.\n", 
+        errors, (errors == 1) ? "" : "s", warnings, (warnings == 1) ? "" : "s");
         
-    printf("Size of symbolEntry * = %ld\n", sizeof(SymbolEntry *));
-    printf("Size of int           = %ld\n", sizeof(int));
-    printf("Size of char          = %ld\n", sizeof(char));
-    printf("Size of const char *  = %ld\n\n", sizeof(const char *));
-        
-    return yyparse();
+    return ret;
 }

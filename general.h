@@ -6,10 +6,18 @@
 #define SYMBOL_TABLE_SIZE 997
 #define QUAD_ARRAY_SIZE   1000
 
+typedef enum {
+	QPLUS, QMINUS, QMULT, QDIV, QMOD,
+	QEQ, QNE, QGT, QLT, QGE, QLE,
+	QASSIGN, QIFB, QJMP, QRET, QRETV,
+	QUNIT, QENDU, QPAR, QCALL
+} QuadOp;
+
 typedef struct quad_item Quad;
 
 struct quad_item {
-    const char *op, *op1, *op2, *dest;
+    QuadOp      op;
+    const char *op1, *op2, *dest;
 };
 
 typedef struct label_list LabelList;
@@ -30,16 +38,22 @@ extern FILE         *finalStream;
 extern const char   *filename;
 extern int           linecount;
 extern int           errors;
+extern int           warnings;
 
 extern FILE         *yyin;
 extern char         *yytext;
 
+extern int  yylex            (void);
+extern void yyerror          (const char msg[]);
+
 /* --- Quad generator functions prototype. --- */
 
 const char *intToString      (unsigned int n);
+
+bool        isBasicType      (Type t);
 Type        getType          (SymbolEntry *e);
 
-void        genQuad          (const char *op, const char *op1, const char *op2, const char *dest);
+void        genQuad          (QuadOp op, const char *op1, const char *op2, const char *dest);
 void        printQuads       (void);
 
 void        exprToCond       (SymbolEntry *p, LabelList **TRUE, LabelList **FALSE);
@@ -55,13 +69,11 @@ void        printLabelList   (LabelList *l);
 
 void        usage            (char *compilerName);
 void        initFiles        (int argc, char **argv);
+void        initLibFuns      (void);
 
 /* --- Memory handler functions prototype. --- */
  
 void       *new              (size_t);
 void        delete           (void *);
-
-extern int  yylex            (void);
-extern void yyerror          (const char msg[]);
 
 #endif

@@ -53,4 +53,6 @@ void warning(const char *fmt, ...) {
    vfprintf(stderr, fmt, ap);
    fprintf(stderr, "\n");
    va_end(ap);
+   
+   warnings++;
 }

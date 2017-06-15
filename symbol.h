@@ -64,13 +64,14 @@ typedef struct Type_tag *Type;
 
 struct Type_tag {
     enum {                               /***** Το είδος του τύπου ****/
-       TYPE_VOID,                        /* Κενός τύπος αποτελέσματος */
-       TYPE_INTEGER,                     /* Ακέραιοι                  */
-       TYPE_BOOLEAN,                     /* Λογικές τιμές             */
-       TYPE_CHAR,                        /* Χαρακτήρες                */
-       TYPE_ARRAY,                       /* Πίνακες γνωστού μεγέθους  */
-       TYPE_IARRAY,                      /* Πίνακες άγνωστου μεγέθους */
-       TYPE_POINTER                      /* Δείκτες                   */
+        TYPE_ANY,
+        TYPE_VOID,                        /* Κενός τύπος αποτελέσματος */
+        TYPE_INTEGER,                     /* Ακέραιοι                  */
+        TYPE_BOOLEAN,                     /* Λογικές τιμές             */
+        TYPE_CHAR,                        /* Χαρακτήρες                */
+        TYPE_IARRAY,                      /* Πίνακες άγνωστου μεγέθους */
+        TYPE_LIST,
+        TYPE_POINTER                      /* Δείκτες                   */
     } kind;
     Type           refType;              /* Τύπος αναφοράς            */
     RepInteger     size;                 /* Μέγεθος, αν είναι πίνακας */
@@ -189,6 +190,7 @@ extern const Type typeVoid;
 extern const Type typeInteger;
 extern const Type typeBoolean;
 extern const Type typeChar;
+extern const Type typeAny;
 
 
 /* ---------------------------------------------------------------------
@@ -212,8 +214,8 @@ void         endFunctionHeader  (SymbolEntry *f, Type type);
 void         destroyEntry       (SymbolEntry *e);
 SymbolEntry *lookupEntry        (const char *name, LookupType type, bool err);
 
-Type         typeArray          (RepInteger size, Type refType);
 Type         typeIArray         (Type refType);
+Type         typeList           (Type refType);
 Type         typePointer        (Type refType);
 void         destroyType        (Type type);
 unsigned int sizeOfType         (Type type);

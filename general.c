@@ -16,12 +16,17 @@ FILE       *finalStream;
 const char *filename;           // File name to be compiled
 int         linecount   = 1;    // Line number
 int         errors      = 0;    // Error counter
+int         warnings    = 0;    // Warning counter
 
 const char *intToString(unsigned int n) {
     char *str = (char *) new(5 * sizeof(char));
     sprintf(str, "%u", n);
     
     return (const char *) str;
+}
+
+bool isBasicType(Type t) {
+    return equalType(t, typeInteger) || equalType(t, typeBoolean) || equalType(t, typeChar);
 }
 
 Type getType(SymbolEntry *e) {
@@ -49,10 +54,10 @@ Type getType(SymbolEntry *e) {
 /*    quads = (Quad **) new(QUAD_ARRAY_SIZE * sizeof(Quad *));*/
 /*}*/
 
-void genQuad(const char *op, const char *op1, const char *op2, const char *dest) {
+void genQuad(QuadOp op, const char *op1, const char *op2, const char *dest) {
     // Quad *newQuad = (Quad *) new(sizeof(Quad));
     
-    quads[quadNext].op   = strdup(op);
+    quads[quadNext].op   = op;
     quads[quadNext].op1  = strdup(op1);
     quads[quadNext].op2  = strdup(op2);
     quads[quadNext].dest = strdup(dest);
@@ -66,29 +71,57 @@ void genQuad(const char *op, const char *op1, const char *op2, const char *dest)
     }
 }
 
+const char *quadToStr(QuadOp op) {
+    switch (op) {
+        case QPLUS:     return "+";
+        case QMINUS:    return "-";
+        case QMULT:     return "*";
+        case QDIV:      return "/";
+        case QMOD:      return "mod";
+        case QIFB:      return "ifb";
+        case QJMP:      return "jump";
+        case QASSIGN:   return ":=";
+        case QEQ:       return "=";
+        case QNE:       return "<>";
+        case QGT:       return ">";
+        case QLT:       return "<";
+        case QGE:       return ">=";
+        case QLE:       return "<=";
+        case QUNIT:     return "unit";
+        case QENDU:     return "endu";
+        case QPAR:      return "par";
+        case QCALL:     return "call";
+        case QRET:      return "ret";
+        case QRETV:     return "retv";
+        default:
+            internal("uknown quad op");
+            exit(1);
+        }
+}
+
 void printQuads() {
     int i;
     
     for (i = 1; i < quadNext; i++)
-        printf("%d: %s, %s, %s, %s\n", i, quads[i].op, quads[i].op1, quads[i].op2, quads[i].dest);
+        printf("%d: %s, %s, %s, %s\n", i, quadToStr(quads[i].op), quads[i].op1, quads[i].op2, quads[i].dest);
 }
 
 void exprToCond(SymbolEntry *p, LabelList **TRUE, LabelList **FALSE) {
     *TRUE = makeList(quadNext);
-    genQuad("ifb", p->id, "-", "*");
+    genQuad(QIFB, p->id, "-", "*");
     *FALSE = makeList(quadNext);
-    genQuad("jump", "-", "-", "*");
+    genQuad(QJMP, "-", "-", "*");
 }
 
 void condToExpr(SymbolEntry **p, LabelList *TRUE, LabelList *FALSE) {
     if (*p == NULL) {
         *p = newTemporary(typeBoolean);
         backpatch(TRUE, quadNext);
-        genQuad(":=", "true", "-",  (*p)->id);
+        genQuad(QASSIGN, "true", "-",  (*p)->id);
         int q = quadNext + 2;
-        genQuad("jump", "-", "-",  intToString(q));
+        genQuad(QJMP, "-", "-",  intToString(q));
         backpatch(FALSE, quadNext);
-        genQuad(":=", "false", "-",  (*p)->id);
+        genQuad(QASSIGN, "false", "-",  (*p)->id);
     }
 }
 
@@ -124,9 +157,9 @@ void printLabelList(LabelList *l) {
     printf("[");
     
     for (c = l; c != NULL; c = c->next)
-	    printf("%d, ", c->label);
-	    
-	printf("]\n");
+        printf("%d, ", c->label);
+    
+    printf("]\n");
 }
 
 /* --- Compiler initialization functions implementation. --- */
@@ -191,11 +224,11 @@ void initFiles(int argc, char **argv) {
         filename = strdup(argv[optind]);
         char *e  = strrchr(filename, '.');
         
-        if (strcmp(e, ".tony")) {
+        if (e == NULL || strcmp(e, ".tony")) {
             fprintf(stderr, "The input filename's extension must be .tony\n");
             exit(1);
         }
-
+        
         if (!(yyin = fopen(filename, "r"))) {
             fprintf(stderr, "No such file '%s'\n", filename);
             exit(1);
@@ -214,6 +247,72 @@ void initFiles(int argc, char **argv) {
         }
         
         strcpy(e, ".tony");
+    }
+}
+
+/* --- Tony library functions declarations. --- */
+
+typedef struct LibFunParams_tag LibFunParams;
+
+struct LibFunParams_tag {
+    char    *name;
+    Type     type;
+    PassMode passMode;
+};
+    
+typedef struct LibFun_tag LibFun;
+
+struct LibFun_tag {
+    char         *name;
+    Type          returnType;
+    int           paramsNum;
+    LibFunParams *params;
+};
+
+void initLibFuns() {
+    int i, j;
+    
+    LibFun functions[] = {
+        {"puti", typeVoid, 1, (LibFunParams[]) {{"n", typeInteger,          PASS_BY_VALUE}}},
+        {"putb", typeVoid, 1, (LibFunParams[]) {{"b", typeBoolean,          PASS_BY_VALUE}}},
+        {"putc", typeVoid, 1, (LibFunParams[]) {{"c", typeChar,             PASS_BY_VALUE}}},
+        {"puts", typeVoid, 1, (LibFunParams[]) {{"s", typeIArray(typeChar), PASS_BY_VALUE}}},
+        
+        {"geti", typeInteger, 0, NULL},
+        {"getb", typeBoolean, 0, NULL},
+        {"getc", typeChar,    0, NULL},
+        {"gets", typeVoid,    2, (LibFunParams[]) {
+            {"n", typeInteger,          PASS_BY_VALUE},
+            {"s", typeIArray(typeChar), PASS_BY_VALUE}}},
+            
+        {"abs", typeInteger, 1, (LibFunParams[]) {{"n", typeInteger, PASS_BY_VALUE}}},
+        {"ord", typeInteger, 1, (LibFunParams[]) {{"c", typeChar,    PASS_BY_VALUE}}},
+        {"chr", typeChar,    1, (LibFunParams[]) {{"c", typeInteger, PASS_BY_VALUE}}},
+        
+        {"strlen", typeInteger, 1, (LibFunParams[]) {{"s", typeIArray(typeChar), PASS_BY_VALUE}}},
+        {"strcmp", typeInteger, 2, (LibFunParams[]) {
+            {"s1", typeIArray(typeChar), PASS_BY_VALUE},
+            {"s2", typeIArray(typeChar), PASS_BY_VALUE}}},
+        {"strcpy", typeVoid, 2, (LibFunParams[]) {
+            {"trg", typeIArray(typeChar), PASS_BY_VALUE},
+            {"src", typeIArray(typeChar), PASS_BY_VALUE}}},
+        {"strcat", typeVoid, 2, (LibFunParams[]) {
+            {"trg", typeIArray(typeChar), PASS_BY_VALUE},
+            {"src", typeIArray(typeChar), PASS_BY_VALUE}}}
+    };
+    
+    int functionNum = (int) sizeof(functions) / sizeof(LibFun);
+    for (i = 0; i < functionNum; i++) {
+        LibFun f = functions[i];
+        SymbolEntry *s = newFunction(f.name);
+        forwardFunction(s);
+        openScope(NULL);
+    
+        for (j = 0; j < f.paramsNum; j++)
+            newParameter(f.params[j].name, f.params[j].type, f.params[j].passMode, s);
+    
+        endFunctionHeader(s, f.returnType);
+        closeScope();
     }
 }
 
