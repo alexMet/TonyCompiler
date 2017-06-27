@@ -5,12 +5,13 @@
 
 #define SYMBOL_TABLE_SIZE 997
 #define QUAD_ARRAY_SIZE   1000
+#define INTTOSTR_BUF_SIZE 5
 
 typedef enum {
 	QPLUS, QMINUS, QMULT, QDIV, QMOD,
 	QEQ, QNE, QGT, QLT, QGE, QLE,
 	QASSIGN, QIFB, QJMP, QRET, QRETV,
-	QUNIT, QENDU, QPAR, QCALL
+	QARRAY, QUNIT, QENDU, QPAR, QCALL
 } QuadOp;
 
 typedef struct quad_item Quad;
@@ -29,7 +30,7 @@ struct label_list {
 
 /* --- Compiler's global variables. --- */
 
-extern Quad          quads[];
+extern char          tmpBuf[];
 
 extern bool          OPTIMIZE;
 extern FILE         *immStream;
@@ -48,16 +49,15 @@ extern void yyerror          (const char msg[]);
 
 /* --- Quad generator functions prototype. --- */
 
-const char *intToString      (unsigned int n);
-
 bool        isBasicType      (Type t);
 Type        getType          (SymbolEntry *e);
+const char *passModeToStr    (SymbolEntry *e);
 
 void        genQuad          (QuadOp op, const char *op1, const char *op2, const char *dest);
 void        printQuads       (void);
 
-void        exprToCond       (SymbolEntry *p, LabelList **TRUE, LabelList **FALSE);
-void        condToExpr       (SymbolEntry **p, LabelList *TRUE, LabelList *FALSE);
+void        exprToCond       (SymbolEntry *e, LabelList **TRUE, LabelList **FALSE);
+void        condToExpr       (SymbolEntry **e, LabelList *TRUE, LabelList *FALSE);
 
 void        backpatch        (LabelList *l, unsigned int label);
 LabelList  *makeList         (unsigned int label);

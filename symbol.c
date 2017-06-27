@@ -43,11 +43,11 @@ static struct Type_tag typeConst [] = {
     { TYPE_ANY,     NULL, 0, 0 }
 };
 
-const Type typeVoid    = &(typeConst[0]);
-const Type typeInteger = &(typeConst[1]);
-const Type typeBoolean = &(typeConst[2]);
-const Type typeChar    = &(typeConst[3]);
-const Type typeAny     = &(typeConst[4]);
+const Type typeVoid      = &(typeConst[0]);
+const Type typeInteger   = &(typeConst[1]);
+const Type typeBoolean   = &(typeConst[2]);
+const Type typeChar      = &(typeConst[3]);
+const Type typeAny       = &(typeConst[4]);
 
 /* --- Implemantation of symbol table helper functions. --- */
 
@@ -657,6 +657,8 @@ unsigned int sizeOfType(Type type) {
         case TYPE_BOOLEAN:
         case TYPE_CHAR:
             return 1;
+        case TYPE_ANY:
+            return 0;
     }
     
     return 0;
@@ -667,6 +669,9 @@ unsigned int sizeOfType(Type type) {
  *  if their sizes are the same. Also, check if their refType is the same.
  */
 bool equalType(Type type1, Type type2) {
+
+    if((type1->kind == TYPE_ANY && type2->kind != TYPE_VOID) || (type2->kind == TYPE_ANY && type1->kind != TYPE_VOID))
+        return true;
 
     if (type1->kind != type2->kind)
         return false;

@@ -16,7 +16,7 @@ OBJFILES = parser.o lexer.o $(patsubst %.c, %.o, $(CFILES))
 EXEFILES = tony$(EXE)
 SRCFILES = $(HFILES) $(CFILES) lexer.l parser.y
 
-default: tony clean
+#default: tony clean
 
 %.o : %.c
 	$(CC) $(CFLAGS) -c $<

@@ -7,7 +7,8 @@
 #include "error.h"
 #include "general.h"
 
-Quad        quads[QUAD_ARRAY_SIZE];
+static Quad quads[QUAD_ARRAY_SIZE];
+char        tmpBuf[INTTOSTR_BUF_SIZE];
 
 bool        OPTIMIZE    = false;
 FILE       *immStream;
@@ -18,12 +19,6 @@ int         linecount   = 1;    // Line number
 int         errors      = 0;    // Error counter
 int         warnings    = 0;    // Warning counter
 
-const char *intToString(unsigned int n) {
-    char *str = (char *) new(5 * sizeof(char));
-    sprintf(str, "%u", n);
-    
-    return (const char *) str;
-}
 
 bool isBasicType(Type t) {
     return equalType(t, typeInteger) || equalType(t, typeBoolean) || equalType(t, typeChar);
@@ -45,6 +40,16 @@ Type getType(SymbolEntry *e) {
             internal("No such entry type.");
             return NULL;
     }
+}
+
+const char *passModeToStr(SymbolEntry *e) {
+    if (e == NULL)
+        return "?";
+        
+    if (e->entryType != ENTRY_PARAMETER)
+        internal("Getting pass mode for something that isn't a parameter.");
+        
+    return (e->u.eParameter.mode == PASS_BY_REFERENCE) ? "R" : "V";
 }
 
 /* --- Quad code production functions. --- */
@@ -78,8 +83,6 @@ const char *quadToStr(QuadOp op) {
         case QMULT:     return "*";
         case QDIV:      return "/";
         case QMOD:      return "mod";
-        case QIFB:      return "ifb";
-        case QJMP:      return "jump";
         case QASSIGN:   return ":=";
         case QEQ:       return "=";
         case QNE:       return "<>";
@@ -87,16 +90,19 @@ const char *quadToStr(QuadOp op) {
         case QLT:       return "<";
         case QGE:       return ">=";
         case QLE:       return "<=";
-        case QUNIT:     return "unit";
-        case QENDU:     return "endu";
+        case QIFB:      return "ifb";
+        case QJMP:      return "jump";
         case QPAR:      return "par";
-        case QCALL:     return "call";
         case QRET:      return "ret";
         case QRETV:     return "retv";
-        default:
-            internal("uknown quad op");
-            exit(1);
-        }
+        case QCALL:     return "call";
+        case QARRAY:    return "array";
+        case QUNIT:     return "unit";
+        case QENDU:     return "endu";
+        default:        internal("uknown quad op");
+    }
+    
+    return NULL;
 }
 
 void printQuads() {
@@ -106,30 +112,37 @@ void printQuads() {
         printf("%d: %s, %s, %s, %s\n", i, quadToStr(quads[i].op), quads[i].op1, quads[i].op2, quads[i].dest);
 }
 
-void exprToCond(SymbolEntry *p, LabelList **TRUE, LabelList **FALSE) {
+void exprToCond(SymbolEntry *e, LabelList **TRUE, LabelList **FALSE) {
     *TRUE = makeList(quadNext);
-    genQuad(QIFB, p->id, "-", "*");
+    genQuad(QIFB, e->id, "-", "*");
     *FALSE = makeList(quadNext);
     genQuad(QJMP, "-", "-", "*");
 }
 
-void condToExpr(SymbolEntry **p, LabelList *TRUE, LabelList *FALSE) {
-    if (*p == NULL) {
-        *p = newTemporary(typeBoolean);
+void condToExpr(SymbolEntry **e, LabelList *TRUE, LabelList *FALSE) {
+    if (*e == NULL) {
+        *e = newTemporary(typeBoolean);
         backpatch(TRUE, quadNext);
-        genQuad(QASSIGN, "true", "-",  (*p)->id);
+        genQuad(QASSIGN, "true", "-",  (*e)->id);
         int q = quadNext + 2;
-        genQuad(QJMP, "-", "-",  intToString(q));
+        snprintf(tmpBuf, INTTOSTR_BUF_SIZE, "%d", q);
+        genQuad(QJMP, "-", "-", (const char *) tmpBuf);
         backpatch(FALSE, quadNext);
-        genQuad(QASSIGN, "false", "-",  (*p)->id);
+        genQuad(QASSIGN, "false", "-",  (*e)->id);
     }
 }
 
 void backpatch(LabelList *l, unsigned int label) {
     LabelList *cur;
     
-    for (cur = l; cur != NULL; cur = cur->next)
-        quads[cur->label].dest = strdup(intToString(label));
+    while (l != NULL) {
+        snprintf(tmpBuf, INTTOSTR_BUF_SIZE, "%u", label);
+        delete((char *) quads[l->label].dest);
+        quads[l->label].dest = strdup(tmpBuf);
+        cur = l->next;
+        delete(l);
+        l = cur;
+    }
 }
 
 LabelList *makeList(unsigned int label) {
@@ -276,29 +289,29 @@ void initLibFuns() {
         {"puti", typeVoid, 1, (LibFunParams[]) {{"n", typeInteger,          PASS_BY_VALUE}}},
         {"putb", typeVoid, 1, (LibFunParams[]) {{"b", typeBoolean,          PASS_BY_VALUE}}},
         {"putc", typeVoid, 1, (LibFunParams[]) {{"c", typeChar,             PASS_BY_VALUE}}},
-        {"puts", typeVoid, 1, (LibFunParams[]) {{"s", typeIArray(typeChar), PASS_BY_VALUE}}},
+        {"puts", typeVoid, 1, (LibFunParams[]) {{"s", typeIArray(typeChar), PASS_BY_REFERENCE}}},
         
         {"geti", typeInteger, 0, NULL},
         {"getb", typeBoolean, 0, NULL},
         {"getc", typeChar,    0, NULL},
         {"gets", typeVoid,    2, (LibFunParams[]) {
             {"n", typeInteger,          PASS_BY_VALUE},
-            {"s", typeIArray(typeChar), PASS_BY_VALUE}}},
+            {"s", typeIArray(typeChar), PASS_BY_REFERENCE}}},
             
         {"abs", typeInteger, 1, (LibFunParams[]) {{"n", typeInteger, PASS_BY_VALUE}}},
         {"ord", typeInteger, 1, (LibFunParams[]) {{"c", typeChar,    PASS_BY_VALUE}}},
         {"chr", typeChar,    1, (LibFunParams[]) {{"c", typeInteger, PASS_BY_VALUE}}},
         
-        {"strlen", typeInteger, 1, (LibFunParams[]) {{"s", typeIArray(typeChar), PASS_BY_VALUE}}},
+        {"strlen", typeInteger, 1, (LibFunParams[]) {{"s", typeIArray(typeChar), PASS_BY_REFERENCE}}},
         {"strcmp", typeInteger, 2, (LibFunParams[]) {
-            {"s1", typeIArray(typeChar), PASS_BY_VALUE},
-            {"s2", typeIArray(typeChar), PASS_BY_VALUE}}},
+            {"s1", typeIArray(typeChar), PASS_BY_REFERENCE},
+            {"s2", typeIArray(typeChar), PASS_BY_REFERENCE}}},
         {"strcpy", typeVoid, 2, (LibFunParams[]) {
-            {"trg", typeIArray(typeChar), PASS_BY_VALUE},
-            {"src", typeIArray(typeChar), PASS_BY_VALUE}}},
+            {"trg", typeIArray(typeChar), PASS_BY_REFERENCE},
+            {"src", typeIArray(typeChar), PASS_BY_REFERENCE}}},
         {"strcat", typeVoid, 2, (LibFunParams[]) {
-            {"trg", typeIArray(typeChar), PASS_BY_VALUE},
-            {"src", typeIArray(typeChar), PASS_BY_VALUE}}}
+            {"trg", typeIArray(typeChar), PASS_BY_REFERENCE},
+            {"src", typeIArray(typeChar), PASS_BY_REFERENCE}}}
     };
     
     int functionNum = (int) sizeof(functions) / sizeof(LibFun);

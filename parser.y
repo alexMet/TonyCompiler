@@ -15,6 +15,10 @@ bool         fromFormal;         // Flag indicating variable decaration
 bool         fromExpr;
 PassMode     tmpPassMode;
 
+Type typeIArrayAny;
+Type typeListAny;
+
+
 %}
 
 %union {
@@ -22,12 +26,18 @@ PassMode     tmpPassMode;
     Type             type;
     SymbolEntry     *place;
     LabelList       *NEXT;
-    unsigned int     tmpQuadNext;
+    unsigned int     quadNext;
     
     struct {
         bool         can_assign;
         SymbolEntry *place;
     } lvalue;
+    
+    struct {
+        int          argCnt;
+        const char  *fname;
+        SymbolEntry *curArg;
+    } call;
     
     struct {
         Type         type;
@@ -95,13 +105,15 @@ PassMode     tmpPassMode;
 %type<cond>   expr_cond cond
 %type<place>  expr header call
 %type<lvalue> atom
-//%type<name> var_star
+
 
 %%
 
 
 program
 :   {
+        typeIArrayAny = typeIArray(typeAny);
+        typeListAny   = typeList(typeAny);
         initSymbolTable(SYMBOL_TABLE_SIZE);
         printSymbolTable();
         openScope(NULL);
@@ -114,6 +126,8 @@ program
         printSymbolTable();
         destroySymbolTable();
         printQuads();
+        destroyType(typeIArrayAny);
+        destroyType(typeListAny);
     }
 ;
 
@@ -186,14 +200,14 @@ formal
     {
         fromFormal = true;
         tmpPassMode = PASS_BY_REFERENCE;
-        newParameter($3, $2, PASS_BY_REFERENCE, tmpPlace);
+        newParameter($3, $2, tmpPassMode, tmpPlace);
     }
     var_star
 |   type T_id
     {
         fromFormal = true;
-        tmpPassMode = PASS_BY_VALUE;
-        newParameter($2, $1, PASS_BY_VALUE, tmpPlace);
+        tmpPassMode = (equalType($1, typeIArrayAny) || equalType($1, typeListAny)) ? PASS_BY_REFERENCE : PASS_BY_VALUE;
+        newParameter($2, $1, tmpPassMode, tmpPlace);
     }
     var_star
 ;
@@ -258,7 +272,8 @@ stmt
             backpatch($2.TRUE, quadNext);
             genQuad(QRETV, "true", "-", "-");
             int q = quadNext + 2;
-            genQuad(QJMP, "-", "-", intToString(q));
+            snprintf(tmpBuf, INTTOSTR_BUF_SIZE, "%d", q);
+            genQuad(QJMP, "-", "-", (const char *) tmpBuf);
             backpatch($2.FALSE, quadNext);
             genQuad(QRETV, "false", "-", "-");
         }
@@ -274,7 +289,7 @@ stmt
         backpatch($2.TRUE, quadNext);
     }
     stmt_plus { /* empty in order for expr_cond to be at place -4 */ } elseif_star "end"
-|   "for" simple_list ';' { $<tmpQuadNext>$ = quadNext; } expr_cond ';'
+|   "for" simple_list ';' { $<quadNext>$ = quadNext; } expr_cond ';'
     {
         if (!equalType($5.type, typeBoolean))
             error("type mismatch: expression after 'if' should be boolean");
@@ -282,17 +297,18 @@ stmt
         if (fromExpr)
             exprToCond($5.place, &($5.TRUE), &($5.FALSE));
         
-        backpatch($5.TRUE, quadNext);
-        $<tmpQuadNext>$ = quadNext;
+        $<quadNext>$ = quadNext;
     }
     simple_list ':'
     {
-        genQuad(QJMP, "-", "-", intToString($<tmpQuadNext>4));
+        snprintf(tmpBuf, INTTOSTR_BUF_SIZE, "%d", $<quadNext>4);
+        genQuad(QJMP, "-", "-", (const char *) tmpBuf);
         backpatch($5.TRUE, quadNext);
     } 
     stmt_plus 
     {
-        genQuad(QJMP, "-", "-", intToString($<tmpQuadNext>7));
+        snprintf(tmpBuf, INTTOSTR_BUF_SIZE, "%d", $<quadNext>7);
+        genQuad(QJMP, "-", "-", (const char *) tmpBuf);
         backpatch($5.FALSE, quadNext);
     }
     "end"
@@ -348,7 +364,8 @@ simple
             backpatch($3.TRUE, quadNext);
             genQuad(QASSIGN, "true", "-", $1.place->id);
             int q = quadNext + 2;
-            genQuad(QJMP, "-", "-", intToString(q));
+            snprintf(tmpBuf, INTTOSTR_BUF_SIZE, "%d", q);
+            genQuad(QJMP, "-", "-", (const char *) tmpBuf);
             backpatch($3.FALSE, quadNext);
             genQuad(QASSIGN, "false", "-", $1.place->id);
         }
@@ -372,45 +389,64 @@ simple_star
 call
 :   T_id '(' ')'
     {
-        if (!($$ = lookupEntry($1, LOOKUP_ALL_SCOPES, true)))
-            $$ = newVariable($1, typeAny); // TODO den yparxei h synarthsh
+        if (!($$ = lookupEntry($1, LOOKUP_ALL_SCOPES, true))) {
+            $$ = newFunction($1); // TODO den yparxei h synarthsh
+            endFunctionHeader($$, typeAny);
+        }
             
-        if ($$->entryType != ENTRY_FUNCTION)
-            error("***");
-            
-        if (getType($$) != typeVoid) {
-            $$ = newTemporary(getType($$));
-            genQuad(QPAR, $$->id, "RET", "-");
+        if ($$->entryType == ENTRY_FUNCTION) {
+            if ($$->u.eFunction.firstArgument)
+                error("passed fewer arguments than expected to function '%s'", $$->id);
+                
+            if (getType($$) != typeVoid) {
+                $$ = newTemporary(getType($$));
+                genQuad(QPAR, $$->id, "RET", "-");
+            }
+            else
+                $$ = newTemporary(typeAny);
+                
+            genQuad(QCALL, "-", "-", $1);
         }
         else
-            $$ = newTemporary(typeAny);
-            
-        genQuad(QCALL, "-", "-", $1);
-        
-        // TODO check function parameters
+            error("***");
     }
 |   T_id '('
     {
-        if (!($<place>$ = lookupEntry($1, LOOKUP_ALL_SCOPES, true)))
-            $<place>$ = newVariable($1, typeAny); // TODO den yparxei h synarthsh
-            
+        if (!($<place>$ = lookupEntry($1, LOOKUP_ALL_SCOPES, true))) {
+            $<place>$ = newFunction($1); // TODO den yparxei h synarthsh
+            endFunctionHeader($<place>$, typeAny);
+        }
+        
         if ($<place>$->entryType != ENTRY_FUNCTION)
             error("***");
-            
-        // TODO check function parameters
     }
     expr_cond
     {
-        if (fromExpr)
-            genQuad(QPAR, $4.place->id, "?", "-");
-        else {
-            // TODO if pass by ref then maybe error?
-            backpatch($4.TRUE, quadNext);
-            genQuad(QPAR, "true", "?", "-");
-            int q = quadNext + 2;
-            genQuad(QJMP, "-", "-", intToString(q));
-            backpatch($4.FALSE, quadNext);
-            genQuad(QPAR, "false", "?", "-");
+        if ($<place>3->entryType == ENTRY_FUNCTION) {
+            SymbolEntry *c = $<place>3->u.eFunction.firstArgument;
+            if (c) {
+                if (!equalType(getType(c), $4.type))
+                    error("type mismatch: in argument %d of function '%s'", 1, $<place>3->id);
+            }
+            else
+                error("passed more arguments than expected to function '%s'", $<place>3->id);
+                            
+            $<call>$.argCnt = 2;
+            $<call>$.fname  = $<place>3->id;
+            $<call>$.curArg = (c) ? c->u.eParameter.next : NULL;
+            
+            if (fromExpr)
+                genQuad(QPAR, $4.place->id, passModeToStr(c), "-");
+            else {
+                // TODO if pass by ref then maybe error?
+                backpatch($4.TRUE, quadNext);
+                genQuad(QPAR, "true", passModeToStr(c), "-");
+                int q = quadNext + 2;
+                snprintf(tmpBuf, INTTOSTR_BUF_SIZE, "%d", q);
+                genQuad(QJMP, "-", "-", (const char *) tmpBuf);
+                backpatch($4.FALSE, quadNext);
+                genQuad(QPAR, "false", passModeToStr(c), "-");
+            }
         }
     }
     expr_star ')'
@@ -427,20 +463,37 @@ call
 ;
 
 expr_star
-:   /* nothing */ // TODO check if exausted all function arguments
+:   /* nothing */ {
+        if ($<call>0.fname != NULL && $<call>0.curArg)
+            error("passed fewer arguments than expected to function '%s'", $<call>0.fname);
+    }   
 |   ',' expr_cond
     {
-        // TODO check types between function argument and expr
-        if (fromExpr)
-            genQuad(QPAR, $2.place->id, "?", "-");
-        else {
-            // TODO if pass by ref then maybe error?
-            backpatch($2.TRUE, quadNext);
-            genQuad(QPAR, "true", "?", "-");
-            int q = quadNext + 2;
-            genQuad(QJMP, "-", "-", intToString(q));
-            backpatch($2.FALSE, quadNext);
-            genQuad(QPAR, "false", "?", "-");
+        if ($<call>0.fname) {
+            SymbolEntry *c = $<call>0.curArg;
+            if (c) {
+                if (!equalType(getType(c), $2.type))
+                    error("type mismatch: in argument %d of function '%s'", $<call>0.argCnt, $<call>0.fname);
+            }
+            else
+                error("passed more arguments than expected to function '%s'", $<call>0.fname);
+
+            $<call>$.argCnt = ++$<call>0.argCnt;
+            $<call>$.fname  = $<call>0.fname;
+            $<call>$.curArg = (c) ? c->u.eParameter.next : NULL;
+            
+            if (fromExpr)
+                genQuad(QPAR, $2.place->id, passModeToStr(c), "-");
+            else {
+                // TODO if pass by ref then maybe error?
+                backpatch($2.TRUE, quadNext);
+                genQuad(QPAR, "true", passModeToStr(c), "-");
+                int q = quadNext + 2;
+                snprintf(tmpBuf, INTTOSTR_BUF_SIZE, "%d", q);
+                genQuad(QJMP, "-", "-", (const char *) tmpBuf);
+                backpatch($2.FALSE, quadNext);
+                genQuad(QPAR, "false", passModeToStr(c), "-");
+            }
         }
     }
     expr_star
@@ -467,6 +520,20 @@ atom
         
         if (!equalType($3.type, typeInteger))
             error("type mismatch: expression in brackets should be int");
+        
+        if (!equalType(getType($1.place), typeIArrayAny))
+            error("type mismatch: atom isn't an array t[expr] -> array[expr]");
+            
+        SymbolEntry *e = newTemporary(getType($1.place)->refType);
+        genQuad(QARRAY, $1.place->id, $3.place->id, e->id);
+        
+        char buffer[10];
+        sprintf(buffer, "[$%d]", e->u.eTemporary.number);
+        delete((char *) e->id);
+        e->id = strdup(buffer);
+        
+        $$.place      = e;
+        $$.can_assign = true;
     }
 |   call
     {
@@ -637,7 +704,18 @@ cond
         $$.TRUE  = merge($1.TRUE, $4.TRUE);
         $$.FALSE = $4.FALSE;
     }
-|   "nil?" '(' expr ')'
+|   "nil?" '(' expr_cond ')'
+    {
+        if (!equalType($3.type, typeListAny))
+            error("operator and operand don't agree: nil?(t1) -> nil?(list)");
+            
+        $$.place = NULL;
+        $$.type  = typeBoolean;
+        $$.TRUE  = makeList(quadNext);
+        genQuad(QEQ, $3.place->id, "nil", "*");
+        $$.FALSE = makeList(quadNext);
+        genQuad(QJMP, "-", "-", "*");
+    }
 ;
 
 expr
@@ -703,18 +781,70 @@ expr
         genQuad(QMOD, $1->id, $3->id, $$->id);
     }
 |   expr '#' expr
+    {
+        if (!equalType(getType($3), typeListAny) && !equalType(getType($1), getType($3)->refType))
+            error("type mismatch in list construction: t # list[t]");
+
+        // func = lookupEntry("consp", LOOKUP_ALL_SCOPES, false);
+        // func = lookupEntry("consv", LOOKUP_ALL_SCOPES, false);
+        // TODO if not a list then create one?
+        $$ = newTemporary(typeList(getType($1)));
+        bool isConsp = equalType(getType($1), typeIArrayAny) || equalType(getType($1), typeListAny);
+
+        genQuad(QPAR, $1->id, (isConsp) ? "R" : "V", "-");
+        genQuad(QPAR, $3->id, (isConsp) ? "R" : "V", "-");
+        genQuad(QPAR, $$->id, "RET", "-");
+        genQuad(QCALL, "-", "-", (isConsp) ? "consp" : "consv");
+    }
 |   "new" type '[' expr ']'
-|   "nil" { if (!($$ = lookupEntry("nil", LOOKUP_ALL_SCOPES, false))) $$ = newConstant("nil", typeBoolean); }
+    {
+        if (!equalType(getType($4), typeInteger))
+            error("type mismatch: new t [ t1 ] -> new t [ int ]");
+
+        // func = lookupEntry("newarrp", LOOKUP_ALL_SCOPES, false);
+        // func = lookupEntry("newarrv", LOOKUP_ALL_SCOPES, false);
+        SymbolEntry *c = newTemporary(typeInteger);
+        snprintf(tmpBuf, INTTOSTR_BUF_SIZE, "%d", sizeOfType($2));
+        $$ = newTemporary(typeIArray($2));
+
+        genQuad(QMULT, $4->id, (const char *) tmpBuf, c->id);
+        genQuad(QPAR, c->id, "V", "-");
+        genQuad(QPAR, $$->id, "RET", "-");
+        genQuad(QCALL, "-", "-", (equalType($2, typeIArrayAny) || equalType($2, typeListAny)) ? "newarrp" : "newarrv");
+    }
+|   "nil" { if (!($$ = lookupEntry("nil", LOOKUP_ALL_SCOPES, false))) $$ = newConstant("nil", typeList(typeAny)); }
 |   "head" '(' expr ')'
+    {
+        if (!equalType(getType($3), typeListAny))
+            error("type mismatch: head(t1) -> head(list[t])");
+
+        // TODO if not a list then create one?
+        $$ = newTemporary((getType($3)->refType) ? getType($3)->refType : typeAny);
+
+        genQuad(QPAR, $3->id, "V", "-");
+        genQuad(QPAR, $$->id, "RET", "-");
+        genQuad(QCALL, "-", "-", "head");
+    }
 |   "tail" '(' expr ')'
+    {
+        if (!equalType(getType($3), typeListAny))
+            error("type mismatch: tail(t1) -> tail(list[t])");
+
+        // TODO if not a list then create one?
+        $$ = newTemporary(getType($3));
+
+        genQuad(QPAR, $3->id, "V", "-");
+        genQuad(QPAR, $$->id, "RET", "-");
+        genQuad(QCALL, "-", "-", "tail");
+    }
 ;
 
 
 %%
 
 void sigsegv_hndler(int signum) {
-	printf("eskase sthn %d tou %s\n", linecount, filename);
-	exit(1);
+    printf("eskase sthn %d tou %s\n", linecount, filename);
+    exit(1);
 }
 
 void yyerror(const char *msg) {
@@ -722,8 +852,12 @@ void yyerror(const char *msg) {
     exit(1);
 }
 
+// -O veltistopoihsh
+// Sto telos mporw na valw ton synoliko xrono kai thn synolikh mnhmh
+
 int main(int argc, char **argv) {
     int ret;
+        
     signal(SIGSEGV, sigsegv_hndler);
     initFiles(argc, argv);
     
