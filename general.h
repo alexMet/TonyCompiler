@@ -2,31 +2,11 @@
 #define __GENERAL_H__
 
 #include "symbol.h"
+#include "quad.h"
 
 #define SYMBOL_TABLE_SIZE 997
 #define QUAD_ARRAY_SIZE   1000
 #define INTTOSTR_BUF_SIZE 5
-
-typedef enum {
-	QPLUS, QMINUS, QMULT, QDIV, QMOD,
-	QEQ, QNE, QGT, QLT, QGE, QLE,
-	QASSIGN, QIFB, QJMP, QRET, QRETV,
-	QARRAY, QUNIT, QENDU, QPAR, QCALL
-} QuadOp;
-
-typedef struct quad_item Quad;
-
-struct quad_item {
-    QuadOp      op;
-    const char *op1, *op2, *dest;
-};
-
-typedef struct label_list LabelList;
-
-struct label_list {
-    unsigned int label;
-    struct label_list *next;
-};
 
 /* --- Compiler's global variables. --- */
 
@@ -51,19 +31,6 @@ extern void yyerror          (const char msg[]);
 
 bool        isBasicType      (Type t);
 Type        getType          (SymbolEntry *e);
-const char *passModeToStr    (SymbolEntry *e);
-
-void        genQuad          (QuadOp op, const char *op1, const char *op2, const char *dest);
-void        printQuads       (void);
-
-void        exprToCond       (SymbolEntry *e, LabelList **TRUE, LabelList **FALSE);
-void        condToExpr       (SymbolEntry **e, LabelList *TRUE, LabelList *FALSE);
-
-void        backpatch        (LabelList *l, unsigned int label);
-LabelList  *makeList         (unsigned int label);
-LabelList  *merge            (LabelList *l1, LabelList *l2);
-
-void        printLabelList   (LabelList *l);
 
 /* --- Compiler initialization functions prototype. --- */
 

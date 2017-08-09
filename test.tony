@@ -1,3 +1,4 @@
+<*
 def proc (int n):
 	def int foo(int a, k, c; char d):
 		return 5
@@ -11,7 +12,7 @@ def proc (int n):
 	k := i(1, koo(4), 3, 'c')
 end
 
-<*
+*>
 
 def main ():
 	int x
@@ -41,10 +42,10 @@ def main ():
 
 %	a := - b * b - 5 * a * c
 
-%	d := 1 + 2 = 3 + 4
-%	d := (i < 200) and true
-%	d := (i < 101) < (i < 102)
-%	d := (i + 111) = false
+	d := 1 + 2 = 3 + 4
+	d := (i < 200) and true
+	d := (i < 101) < (i < 102)
+	d := (i + 111) = false
 
 %	d := true
 %	i := i + 1

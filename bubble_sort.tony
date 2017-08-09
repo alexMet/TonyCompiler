@@ -12,6 +12,7 @@ def main ():
 	int i
 	char l
 
+	i := i + 1
 	i := alex(5, 6, foo())
 
 end

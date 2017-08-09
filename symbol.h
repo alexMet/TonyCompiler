@@ -50,14 +50,6 @@ typedef enum { false=0, true=1 } bool;
    --------------- Ορισμός τύπων του πίνακα συμβόλων -------------------
    --------------------------------------------------------------------- */
 
-/* Τύποι δεδομένων για την υλοποίηση των σταθερών */
-
-typedef int                RepInteger;         /* Ακέραιες                  */
-typedef unsigned char      RepBoolean;         /* Λογικές τιμές             */
-typedef char               RepChar;            /* Χαρακτήρες                */
-typedef const char        *RepString;          /* Συμβολοσειρές             */
-
-
 /* Τύποι δεδομένων και αποτελέσματος συναρτήσεων */
 
 typedef struct Type_tag *Type;
@@ -74,7 +66,6 @@ struct Type_tag {
         TYPE_POINTER                      /* Δείκτες                   */
     } kind;
     Type           refType;              /* Τύπος αναφοράς            */
-    RepInteger     size;                 /* Μέγεθος, αν είναι πίνακας */
     unsigned int   refCount;             /* Μετρητής αναφορών         */
 };
 
@@ -83,7 +74,7 @@ struct Type_tag {
 
 typedef enum {            
    ENTRY_VARIABLE,                       /* Μεταβλητές                 */
-   ENTRY_CONSTANT,                       /* Σταθερές                   */
+   ENTRY_CONSTANT,
    ENTRY_FUNCTION,                       /* Συναρτήσεις                */
    ENTRY_PARAMETER,                      /* Παράμετροι συναρτήσεων     */
    ENTRY_TEMPORARY                       /* Προσωρινές μεταβλητές      */
@@ -116,16 +107,6 @@ struct SymbolEntry_tag {
          Type          type;                  /* Τύπος                 */
          int           offset;                /* Offset στο Ε.Δ.       */
       } eVariable;
-
-      struct {                                /******** Σταθερά ********/
-         Type          type;                  /* Τύπος                 */
-         union {                              /* Τιμή                  */
-            RepInteger vInteger;              /*    ακέραια            */
-            RepBoolean vBoolean;              /*    λογική             */
-            RepChar    vChar;                 /*    χαρακτήρας         */
-            RepString  vString;               /*    συμβολοσειρά       */
-         } value;
-      } eConstant;
 
       struct {                                /******* Συνάρτηση *******/
          bool         isForward;              /* Δήλωση forward        */
@@ -184,6 +165,7 @@ typedef enum {
 
 extern Scope        *currentScope;       /* Τρέχουσα εμβέλεια         */
 extern unsigned int  quadNext;           /* Αριθμός επόμενης τετράδας */
+extern unsigned int  quadOffset;
 extern unsigned int  tempNumber;         /* Αρίθμηση των temporaries  */
 
 extern const Type typeVoid;
@@ -204,7 +186,6 @@ void         openScope          (Type type);
 void         closeScope         (void);
 
 SymbolEntry *newVariable        (const char *name, Type type);
-SymbolEntry *newConstant        (const char *name, Type type, ...);
 SymbolEntry *newFunction        (const char *name);
 SymbolEntry *newParameter       (const char *name, Type type, PassMode mode, SymbolEntry *f);
 SymbolEntry *newTemporary       (Type type);

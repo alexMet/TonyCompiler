@@ -7,12 +7,11 @@
 #include "error.h"
 #include "general.h"
 
-static Quad quads[QUAD_ARRAY_SIZE];
-char        tmpBuf[INTTOSTR_BUF_SIZE];
+/* --- Compiler's global variables. --- */
 
-bool        OPTIMIZE    = false;
 FILE       *immStream;
 FILE       *finalStream;
+bool        OPTIMIZE    = false;
 
 const char *filename;           // File name to be compiled
 int         linecount   = 1;    // Line number
@@ -29,150 +28,16 @@ Type getType(SymbolEntry *e) {
         case ENTRY_FUNCTION:
             return e->u.eFunction.resultType;
         case ENTRY_VARIABLE:
+        case ENTRY_CONSTANT:
             return e->u.eVariable.type;
         case ENTRY_PARAMETER:
             return e->u.eParameter.type;
         case ENTRY_TEMPORARY:
             return e->u.eTemporary.type;
-        case ENTRY_CONSTANT:
-            return e->u.eConstant.type;
         default:
             internal("No such entry type.");
             return NULL;
     }
-}
-
-const char *passModeToStr(SymbolEntry *e) {
-    if (e == NULL)
-        return "?";
-        
-    if (e->entryType != ENTRY_PARAMETER)
-        internal("Getting pass mode for something that isn't a parameter.");
-        
-    return (e->u.eParameter.mode == PASS_BY_REFERENCE) ? "R" : "V";
-}
-
-/* --- Quad code production functions. --- */
-
-/*void initQuadArray() {*/
-/*    curQuadArraySize = QUAD_ARRAY_SIZE;*/
-/*    quads = (Quad **) new(QUAD_ARRAY_SIZE * sizeof(Quad *));*/
-/*}*/
-
-void genQuad(QuadOp op, const char *op1, const char *op2, const char *dest) {
-    // Quad *newQuad = (Quad *) new(sizeof(Quad));
-    
-    quads[quadNext].op   = op;
-    quads[quadNext].op1  = strdup(op1);
-    quads[quadNext].op2  = strdup(op2);
-    quads[quadNext].dest = strdup(dest);
-    
-    quadNext++;
-    
-    if (quadNext == QUAD_ARRAY_SIZE) {
-        internal("Too many quads generated");
-        // TODO resize array
-        // curQuadArraySize = 2 * curQuadArraySize;
-    }
-}
-
-const char *quadToStr(QuadOp op) {
-    switch (op) {
-        case QPLUS:     return "+";
-        case QMINUS:    return "-";
-        case QMULT:     return "*";
-        case QDIV:      return "/";
-        case QMOD:      return "mod";
-        case QASSIGN:   return ":=";
-        case QEQ:       return "=";
-        case QNE:       return "<>";
-        case QGT:       return ">";
-        case QLT:       return "<";
-        case QGE:       return ">=";
-        case QLE:       return "<=";
-        case QIFB:      return "ifb";
-        case QJMP:      return "jump";
-        case QPAR:      return "par";
-        case QRET:      return "ret";
-        case QRETV:     return "retv";
-        case QCALL:     return "call";
-        case QARRAY:    return "array";
-        case QUNIT:     return "unit";
-        case QENDU:     return "endu";
-        default:        internal("uknown quad op");
-    }
-    
-    return NULL;
-}
-
-void printQuads() {
-    int i;
-    
-    for (i = 1; i < quadNext; i++)
-        printf("%d: %s, %s, %s, %s\n", i, quadToStr(quads[i].op), quads[i].op1, quads[i].op2, quads[i].dest);
-}
-
-void exprToCond(SymbolEntry *e, LabelList **TRUE, LabelList **FALSE) {
-    *TRUE = makeList(quadNext);
-    genQuad(QIFB, e->id, "-", "*");
-    *FALSE = makeList(quadNext);
-    genQuad(QJMP, "-", "-", "*");
-}
-
-void condToExpr(SymbolEntry **e, LabelList *TRUE, LabelList *FALSE) {
-    if (*e == NULL) {
-        *e = newTemporary(typeBoolean);
-        backpatch(TRUE, quadNext);
-        genQuad(QASSIGN, "true", "-",  (*e)->id);
-        int q = quadNext + 2;
-        snprintf(tmpBuf, INTTOSTR_BUF_SIZE, "%d", q);
-        genQuad(QJMP, "-", "-", (const char *) tmpBuf);
-        backpatch(FALSE, quadNext);
-        genQuad(QASSIGN, "false", "-",  (*e)->id);
-    }
-}
-
-void backpatch(LabelList *l, unsigned int label) {
-    LabelList *cur;
-    
-    while (l != NULL) {
-        snprintf(tmpBuf, INTTOSTR_BUF_SIZE, "%u", label);
-        delete((char *) quads[l->label].dest);
-        quads[l->label].dest = strdup(tmpBuf);
-        cur = l->next;
-        delete(l);
-        l = cur;
-    }
-}
-
-LabelList *makeList(unsigned int label) {
-    LabelList *l = (LabelList *) new(sizeof(LabelList));
-    
-    l->label = label;
-    l->next  = NULL;
-    
-    return l;
-}
-
-LabelList *merge(LabelList *l1, LabelList *l2) {
-    LabelList *l;
-    
-    if (l1 == NULL) return l2;
-    
-    for (l = l1; l->next != NULL; l = l->next) ;
-        
-    l->next = l2;
-    return l;
-}
-
-void printLabelList(LabelList *l) {
-    LabelList *c;
-    printf("[");
-    
-    for (c = l; c != NULL; c = c->next)
-        printf("%d, ", c->label);
-    
-    printf("]\n");
 }
 
 /* --- Compiler initialization functions implementation. --- */
@@ -311,7 +176,18 @@ void initLibFuns() {
             {"src", typeIArray(typeChar), PASS_BY_REFERENCE}}},
         {"strcat", typeVoid, 2, (LibFunParams[]) {
             {"trg", typeIArray(typeChar), PASS_BY_REFERENCE},
-            {"src", typeIArray(typeChar), PASS_BY_REFERENCE}}}
+            {"src", typeIArray(typeChar), PASS_BY_REFERENCE}}},
+            
+        {"head",  typeAny,           1, (LibFunParams[]) {{"l", typeList(typeAny), PASS_BY_REFERENCE}}},
+        {"tail",  typeList(typeAny), 1, (LibFunParams[]) {{"l", typeList(typeAny), PASS_BY_REFERENCE}}},
+        {"consp", typeList(typeAny), 2, (LibFunParams[]) {
+            {"p", typeAny, PASS_BY_REFERENCE},
+            {"l", typeAny, PASS_BY_REFERENCE}}},
+        {"consv", typeList(typeAny), 2, (LibFunParams[]) {
+            {"v", typeAny,           PASS_BY_REFERENCE},
+            {"l", typeList(typeAny), PASS_BY_REFERENCE}}},
+        {"newarrp", typeIArray(typeAny), 1, (LibFunParams[]) {{"v", typeInteger, PASS_BY_VALUE}}},
+        {"newarrv", typeIArray(typeAny), 1, (LibFunParams[]) {{"v", typeInteger, PASS_BY_VALUE}}}
     };
     
     int functionNum = (int) sizeof(functions) / sizeof(LibFun);

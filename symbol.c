@@ -30,17 +30,18 @@
  
 Scope        *currentScope;           /* Current Scope          */
 unsigned int  quadNext;               /* Next quad number       */
+unsigned int  quadOffset;             /* Quad generated offset  */
 unsigned int  tempNumber;             /* Next temporary number  */
 
 static unsigned int  hashTableSize;   /* Hash table size        */
 static SymbolEntry **hashTable;       /* Hash table             */
 
 static struct Type_tag typeConst [] = {
-    { TYPE_VOID,    NULL, 0, 0 },
-    { TYPE_INTEGER, NULL, 0, 0 },
-    { TYPE_BOOLEAN, NULL, 0, 0 },
-    { TYPE_CHAR,    NULL, 0, 0 },
-    { TYPE_ANY,     NULL, 0, 0 }
+    { TYPE_VOID,    NULL, 0 },
+    { TYPE_INTEGER, NULL, 0 },
+    { TYPE_BOOLEAN, NULL, 0 },
+    { TYPE_CHAR,    NULL, 0 },
+    { TYPE_ANY,     NULL, 0 }
 };
 
 const Type typeVoid      = &(typeConst[0]);
@@ -77,46 +78,6 @@ static HashType PJW_hash(const char *key) {
     return h;
 }
 
-void strAppendChar(char *buffer, RepChar c) {
-    
-    switch (c) {
-        case '\n':
-            strcat(buffer, "\\n");
-            break;
-        case '\t':
-            strcat(buffer, "\\t");
-            break;
-        case '\r':
-            strcat(buffer, "\\r");
-            break;
-        case '\0':
-            strcat(buffer, "\\0");
-            break;
-        case '\\':
-            strcat(buffer, "\\\\");
-            break;
-        case '\'':
-            strcat(buffer, "\\'");
-            break;
-        case '\"':
-            strcat(buffer, "\\\"");
-            break;
-        default: {
-            char s[] = { '\0', '\0' };
-            
-            *s = c;
-            strcat(buffer, s);
-        }
-    }
-}
-
-void strAppendString(char *buffer, RepString str) {
-    const char *s;
-    
-    for (s = str; *s != '\0'; s++)
-        strAppendChar(buffer, *s);
-}
-
 /* --- Implemantation of symbol table utilities functions. --- */
 
 /* Initialize the symbol table. Size should be a prime number. */
@@ -124,7 +85,8 @@ void initSymbolTable(unsigned int size) {
     unsigned int i;
     
     currentScope = NULL;
-    quadNext     = 1;
+    quadNext     = 0;
+    quadOffset   = 0;
     tempNumber   = 1;
     
     hashTableSize = size;
@@ -235,112 +197,6 @@ SymbolEntry *newVariable(const char *name, Type type) {
         type->refCount++;
         currentScope->negOffset -= sizeOfType(type);
         e->u.eVariable.offset = currentScope->negOffset;
-    }
-    
-    return e;
-}
-
-/*
- *  TODO Create a new constant
- */
-SymbolEntry *newConstant(const char *name, Type type, ...) {
-    SymbolEntry *e;
-    va_list ap;
-
-    union {
-        RepInteger vInteger;
-        RepBoolean vBoolean;
-        RepChar    vChar;
-        RepString  vString;
-    } value;
-         
-    va_start(ap, type);
-    switch (type->kind) {
-        case TYPE_INTEGER:
-            value.vInteger = va_arg(ap, RepInteger);
-            break;
-        case TYPE_BOOLEAN:
-            /* RepBool is promoted */
-            value.vBoolean = va_arg(ap, int);
-            break;
-        case TYPE_CHAR:
-            /* RepChar is promoted */
-            value.vChar = va_arg(ap, int);
-            break;
-        case TYPE_IARRAY:
-            if (equalType(type->refType, typeChar)) {
-                RepString str = va_arg(ap, RepString);
-                
-                value.vString = (const char *) new(strlen(str) + 1);
-                strcpy((char *) (value.vString), str);
-                break;
-            }
-        case TYPE_LIST:
-        case TYPE_POINTER:
-        case TYPE_VOID:
-            break;
-        default:
-            internal("Invalid type for constant");
-    }
-    va_end(ap);
-
-    if (name == NULL) {
-        char buffer[256];
-        
-        switch (type->kind) {
-            case TYPE_INTEGER:
-                sprintf(buffer, "%d", value.vInteger);
-                break;
-            case TYPE_BOOLEAN:
-                if (value.vBoolean)
-                    sprintf(buffer, "true");
-                else
-                    sprintf(buffer, "false");
-                break;
-            case TYPE_CHAR:
-                strcpy(buffer, "'");
-                strAppendChar(buffer, value.vChar);
-                strcat(buffer, "'");
-                break;
-            case TYPE_IARRAY:
-                strcpy(buffer, "\"");
-                strAppendString(buffer, value.vString);
-                strcat(buffer, "\"");
-                break;
-            case TYPE_LIST:
-            case TYPE_POINTER:
-            case TYPE_VOID:
-                break;
-        }
-        
-        e = newEntry(buffer);
-    }
-    else
-        e = newEntry(name);
-    
-    if (e != NULL) {
-        e->entryType = ENTRY_CONSTANT;
-        e->u.eConstant.type = type;
-        type->refCount++;
-        
-        switch (type->kind) {
-            case TYPE_INTEGER:
-                e->u.eConstant.value.vInteger = value.vInteger;
-                break;
-            case TYPE_BOOLEAN:
-                e->u.eConstant.value.vBoolean = value.vBoolean;
-                break;
-            case TYPE_CHAR:
-                e->u.eConstant.value.vChar = value.vChar;
-                break;
-            case TYPE_IARRAY:
-                e->u.eConstant.value.vString = value.vString;
-                break;
-            case TYPE_LIST:
-            case TYPE_POINTER:
-            case TYPE_VOID:
-                break;
-        }
     }
     
     return e;
@@ -493,7 +349,6 @@ void endFunctionHeader(SymbolEntry *f, Type type) {
     f->u.eFunction.pardef = PARDEF_COMPLETE;
 }
 
-
 SymbolEntry *newTemporary(Type type) {
     char buffer[10];
     SymbolEntry *e;
@@ -520,12 +375,6 @@ void destroyEntry(SymbolEntry *e) {
         case ENTRY_VARIABLE:
             destroyType(e->u.eVariable.type);
             break;
-        case ENTRY_CONSTANT:
-            if (e->u.eConstant.type->kind == TYPE_IARRAY)
-                delete((char *) (e->u.eConstant.value.vString));
-            
-            destroyType(e->u.eConstant.type);
-            break;
         case ENTRY_FUNCTION:
             args = e->u.eFunction.firstArgument;
             
@@ -540,8 +389,10 @@ void destroyEntry(SymbolEntry *e) {
             
             destroyType(e->u.eFunction.resultType);
             break;
+        case ENTRY_CONSTANT:
+            /* We do not keep constants in the symbol table. */
         case ENTRY_PARAMETER:
-            /* Οι παράμετροι καταστρέφονται μαζί με τη συνάρτηση */
+            /* Parameters are destroyed with the function. */
             return;
         case ENTRY_TEMPORARY:
             destroyType(e->u.eTemporary.type);
@@ -779,6 +630,9 @@ void printSymbolTable() {
                         printf(") : ");
                         printType(e->u.eFunction.resultType);
                         break;
+                    case ENTRY_CONSTANT:
+                        /* We do not keep constants in the symbol table. */
+                        break;
 #ifdef SHOW_OFFSETS
                     case ENTRY_VARIABLE:
                         printf("[%d]", e->u.eVariable.offset);
@@ -788,8 +642,6 @@ void printSymbolTable() {
                         break;
                     case ENTRY_TEMPORARY:
                         printf("[%d]", e->u.eTemporary.offset);
-                        break;
-                    case ENTRY_CONSTANT:
                         break;
 #endif
                 }
